@@ -81,6 +81,42 @@ service cloud.firestore {
       match /stockUsage/{usageId} {
         allow read, write: if member(homeId);
       }
+      match /prices/{priceId} {
+        allow read: if member(homeId);
+        allow create: if member(homeId) &&
+          request.resource.data.keys().hasOnly(['product', 'shop', 'unitPrice', 'unit', 'date', 'createdBy']) &&
+          request.resource.data.product is string && request.resource.data.product.size() > 0 &&
+          request.resource.data.product.size() <= 100 &&
+          request.resource.data.shop is string && request.resource.data.shop.size() <= 100 &&
+          request.resource.data.unitPrice is number &&
+          request.resource.data.unitPrice > 0 && request.resource.data.unitPrice < 100000 &&
+          request.resource.data.date is string &&
+          request.resource.data.createdBy == request.auth.uid;
+        allow update: if false;
+        allow delete: if member(homeId);
+      }
+      match /checklists/{templateId} {
+        allow read: if member(homeId);
+        allow create: if member(homeId) &&
+          request.resource.data.keys().hasOnly(['name', 'tasks', 'createdBy']) &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.name is string && request.resource.data.name.size() <= 100 &&
+          request.resource.data.tasks is list && request.resource.data.tasks.size() <= 80;
+        allow update: if false;
+        allow delete: if member(homeId);
+      }
+      match /trash/{trashId} {
+        allow read: if member(homeId);
+        allow create: if member(homeId) &&
+          request.resource.data.keys().hasOnly(['type', 'label', 'payload', 'deletedAt', 'deletedBy']) &&
+          request.resource.data.deletedBy == request.auth.uid &&
+          request.resource.data.type in ['shopping', 'task', 'recipe', 'stock'] &&
+          request.resource.data.label is string && request.resource.data.label.size() <= 120 &&
+          request.resource.data.payload is string && request.resource.data.payload.size() <= 12000 &&
+          request.resource.data.deletedAt is int && request.resource.data.deletedAt > 0;
+        allow update: if false;
+        allow delete: if member(homeId);
+      }
       match /tasks/{taskId} {
         allow read, write: if member(homeId);
       }
