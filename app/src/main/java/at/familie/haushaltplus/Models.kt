@@ -76,7 +76,7 @@ interface HouseholdStore {
     fun updateTask(task: HouseholdTask)
     fun setTaskDone(item: HouseholdTask, done: Boolean)
     fun deleteTask(item: HouseholdTask)
-    fun addStock(name: String, quantity: Int, minimum: Int, unit: String)
+    fun addStock(name: String, quantity: Int, minimum: Int, unit: String, expiresOn: String = "")
     fun updateStock(item: StockItem)
     fun changeStock(item: StockItem, amount: Int)
     fun retryFailedStockChange()

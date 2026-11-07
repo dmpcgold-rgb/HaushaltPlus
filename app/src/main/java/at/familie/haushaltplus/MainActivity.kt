@@ -321,7 +321,9 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?, reque
             onAdd = { n,q,u,c,p -> store.addShopping(n,q,u,c,p,activeListId); adding = false; scannedName = ""; scanStatus = "" })
         2 -> AddTaskDialog(data, onDismiss = { adding = false },
             onAdd = { t,a,d,r,rotate -> store.addTask(t,a,d,r,rotate); adding = false })
-        3 -> AddStockDialog(onDismiss = { adding = false }, onAdd = { n,q,m,u -> store.addStock(n,q,m,u); adding = false })
+        3 -> AddStockDialog(onDismiss = { adding = false }, onAdd = { n,q,m,u,e ->
+            store.addStock(n,q,m,u,e); adding = false
+        })
     }
     if (addListOpen) {
         var listName by remember { mutableStateOf("") }
@@ -815,6 +817,14 @@ private fun StockPage(data: HouseholdData, store: HouseholdStore, modifier: Modi
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(stock.name, fontWeight = FontWeight.SemiBold)
+                            V4Logic.expiryDays(stock)?.let { days ->
+                                Text(when {
+                                    days < 0 -> "MHD überschritten: " + -days + " Tage"
+                                    days == 0L -> "MHD heute"
+                                    else -> "MHD in " + days + " Tagen"
+                                }, color = if (days <= 3) AccentPink else AccentTeal,
+                                    style = MaterialTheme.typography.labelSmall)
+                            }
                             val days = V3Logic.daysRemaining(stock, data.stockUsage)
                             if (days != null) Text("Geschätzter Vorrat: " + days +
                                 if(days == 1) " Tag" else " Tage",
@@ -921,19 +931,24 @@ private fun AddTaskDialog(data: HouseholdData, onDismiss: () -> Unit, onAdd: (St
 }
 
 @Composable
-private fun AddStockDialog(onDismiss: () -> Unit, onAdd: (String, Int, Int, String) -> Unit) {
+private fun AddStockDialog(onDismiss: () -> Unit, onAdd: (String, Int, Int, String, String) -> Unit) {
     var name by remember { mutableStateOf("") }
     var qty by remember { mutableStateOf("1") }
     var min by remember { mutableStateOf("1") }
     var unit by remember { mutableStateOf("Stk") }
+    var expiry by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Vorrat erfassen") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(name, { name = it }, label = { Text("Artikelname") }, singleLine = true)
             OutlinedTextField(qty, { qty = it }, label = { Text("Aktuell vorhanden") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             OutlinedTextField(min, { min = it }, label = { Text("Ab welcher Menge nachkaufen?") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             OutlinedTextField(unit, { unit = it }, label = { Text("Einheit") }, singleLine = true)
-        } }, confirmButton = { TextButton(enabled = name.isNotBlank() && qty.toIntOrNull() != null && min.toIntOrNull() != null, onClick = {
-            onAdd(name.trim(), (qty.toIntOrNull() ?: 0).coerceAtLeast(0), (min.toIntOrNull() ?: 1).coerceAtLeast(0), unit.ifBlank { "Stk" })
+            OutlinedTextField(expiry, { expiry = it.take(10) }, label = { Text("MHD JJJJ-MM-TT (optional)") }, singleLine = true)
+        } }, confirmButton = { TextButton(enabled = name.isNotBlank() && qty.toIntOrNull() != null &&
+            min.toIntOrNull() != null && (expiry.isBlank() || runCatching { LocalDate.parse(expiry) }.isSuccess),
+            onClick = {
+            onAdd(name.trim(), (qty.toIntOrNull() ?: 0).coerceAtLeast(0),
+                (min.toIntOrNull() ?: 1).coerceAtLeast(0), unit.ifBlank { "Stk" }, expiry)
         }) { Text("Speichern") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } })
 }
 
@@ -990,15 +1005,18 @@ private fun EditStockDialog(item: StockItem, onDismiss: () -> Unit, onSave: (Sto
     var qty by remember(item.id) { mutableStateOf(item.quantity.toString()) }
     var min by remember(item.id) { mutableStateOf(item.minimum.toString()) }
     var unit by remember(item.id) { mutableStateOf(item.unit) }
+    var expiry by remember(item.id) { mutableStateOf(item.expiresOn) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Vorrat bearbeiten") },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             OutlinedTextField(name, { name = it }, label = { Text("Artikelname") })
             OutlinedTextField(qty, { qty = it }, label = { Text("Bestand") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             OutlinedTextField(min, { min = it }, label = { Text("Mindestbestand") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             OutlinedTextField(unit, { unit = it }, label = { Text("Einheit") })
+            OutlinedTextField(expiry, { expiry = it.take(10) }, label = { Text("MHD JJJJ-MM-TT (optional)") }, singleLine = true)
         } },
-        confirmButton = { TextButton(enabled = name.isNotBlank() && qty.toIntOrNull() != null && min.toIntOrNull() != null,
+        confirmButton = { TextButton(enabled = name.isNotBlank() && qty.toIntOrNull() != null &&
+            min.toIntOrNull() != null && (expiry.isBlank() || runCatching { LocalDate.parse(expiry) }.isSuccess),
             onClick = { onSave(item.copy(name = name.trim(), quantity = (qty.toIntOrNull() ?: 0).coerceAtLeast(0),
-                minimum = (min.toIntOrNull() ?: 0).coerceAtLeast(0), unit = unit)) }) { Text("Speichern") } },
+                minimum = (min.toIntOrNull() ?: 0).coerceAtLeast(0), unit = unit, expiresOn = expiry)) }) { Text("Speichern") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } })
 }

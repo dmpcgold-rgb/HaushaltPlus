@@ -246,12 +246,12 @@ class LocalStore(private val context: Context) : HouseholdStore {
             trash = h.trash + TrashEntry(id(), "task", current.title,
                 V4TrashCodec.task(current), System.currentTimeMillis()))
     }
-    override fun addStock(name: String, quantity: Int, minimum: Int, unit: String) =
+    override fun addStock(name: String, quantity: Int, minimum: Int, unit: String, expiresOn: String) =
         mutate { h ->
             val need = quantity <= minimum &&
                 h.shopping.none { !it.bought && it.name.equals(name.trim(), ignoreCase = true) }
             h.copy(
-                stock = h.stock + StockItem(id(), name.trim(), quantity, minimum, unit),
+                stock = h.stock + StockItem(id(), name.trim(), quantity, minimum, unit, expiresOn),
                 shopping = if (need) h.shopping + ShoppingItem(id(), name.trim(), "1", unit, "Vorrat")
                     else h.shopping
             )

@@ -471,9 +471,9 @@ class CloudStore(
     override fun deleteTask(item: HouseholdTask) {
         trash("task", item.title, item.id, "tasks", V4TrashCodec.task(item))
     }
-    override fun addStock(name: String, quantity: Int, minimum: Int, unit: String) {
+    override fun addStock(name: String, quantity: Int, minimum: Int, unit: String, expiresOn: String) {
         home.collection("stock").add(mapOf("name" to name.trim(), "quantity" to quantity,
-            "minimum" to minimum, "unit" to unit, "expiresOn" to "", "updatedAt" to FieldValue.serverTimestamp()))
+            "minimum" to minimum, "unit" to unit, "expiresOn" to expiresOn, "updatedAt" to FieldValue.serverTimestamp()))
             .addOnSuccessListener {
                 if (quantity <= minimum) addMissingStockToShopping(name, unit)
             }.addOnFailureListener(::setError)

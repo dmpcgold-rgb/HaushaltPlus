@@ -26,7 +26,7 @@ object BackupCodec {
         } })
         root.put("stock", JSONArray().apply { data.stock.forEach { x ->
             put(JSONObject().put("name", x.name).put("quantity", x.quantity)
-                .put("minimum", x.minimum).put("unit", x.unit))
+                .put("minimum", x.minimum).put("unit", x.unit).put("expiresOn", x.expiresOn))
         } })
         root.put("meals", JSONArray().apply { data.meals.forEach { x ->
             put(JSONObject().put("date", x.date).put("slot", x.slot)
@@ -86,7 +86,8 @@ object BackupCodec {
             val name = o.optString("name").trim()
             if (name.isBlank() || existing.stock.any { it.name.equals(name, true) }) continue
             store.addStock(name, o.optInt("quantity").coerceAtLeast(0),
-                o.optInt("minimum", 1).coerceAtLeast(0), o.optString("unit", "Stk"))
+                o.optInt("minimum", 1).coerceAtLeast(0), o.optString("unit", "Stk"),
+                o.optString("expiresOn"))
             inserted++
         }
         for (o in rows("meals")) {
