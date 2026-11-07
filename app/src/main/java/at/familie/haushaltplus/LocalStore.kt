@@ -52,6 +52,26 @@ class LocalStore(private val context: Context) : HouseholdStore {
                         it.optString("slot", "Abendessen"), it.optString("title"), it.optString("ingredients"))
                 },
                 monthlyBudget = root.optDouble("monthlyBudget", 0.0).coerceAtLeast(0.0),
+                templates = list("templates") {
+                    ShoppingTemplate(it.optString("id"), it.optString("name"),
+                        V3Logic.itemsFromJson(it.optString("itemsJson", "[]")))
+                },
+                recipes = list("recipes") {
+                    RecipeEntry(it.optString("id"), it.optString("name"),
+                        it.optInt("portions", 2), it.optString("ingredients"))
+                },
+                receipts = list("receipts") {
+                    ReceiptEntry(it.optString("id"), it.optString("merchant"),
+                        it.optString("date"), it.optDouble("total"), it.optString("note"))
+                },
+                stockUsage = list("stockUsage") {
+                    StockUsage(it.optString("id"), it.optString("stockId"),
+                        it.optString("date"), it.optInt("quantity"))
+                },
+                activity = list("activity") {
+                    ActivityEntry(it.optString("id"), it.optString("actor"), it.optString("title"),
+                        it.optString("kind"), it.optLong("createdAt"))
+                },
                 syncStatus = "Lokal gespeichert"
             )
         } catch (_: Exception) {
@@ -61,7 +81,7 @@ class LocalStore(private val context: Context) : HouseholdStore {
     }
     private fun save(next: HouseholdData) {
         val root = JSONObject().put("name", next.name).put("ownName", next.ownName)
-            .put("monthlyBudget", next.monthlyBudget).put("schemaVersion", 2)
+            .put("monthlyBudget", next.monthlyBudget).put("schemaVersion", 3)
         root.put("lists", JSONArray().apply {
             next.lists.filterNot { it.id == "standard" }.forEach { v ->
                 put(JSONObject().put("id",v.id).put("name",v.name))
@@ -95,14 +115,39 @@ class LocalStore(private val context: Context) : HouseholdStore {
                     .put("title",v.title).put("ingredients",v.ingredients))
             }
         })
+        root.put("templates", JSONArray().apply {
+            next.templates.forEach { v -> put(JSONObject().put("id",v.id).put("name",v.name)
+                .put("itemsJson",V3Logic.itemsToJson(v.items))) }
+        })
+        root.put("recipes", JSONArray().apply {
+            next.recipes.forEach { v -> put(JSONObject().put("id",v.id).put("name",v.name)
+                .put("portions",v.portions).put("ingredients",v.ingredients)) }
+        })
+        root.put("receipts", JSONArray().apply {
+            next.receipts.forEach { v -> put(JSONObject().put("id",v.id).put("merchant",v.merchant)
+                .put("date",v.date).put("total",v.total).put("note",v.note)) }
+        })
+        root.put("stockUsage", JSONArray().apply {
+            next.stockUsage.takeLast(1000).forEach { v -> put(JSONObject().put("id",v.id)
+                .put("stockId",v.stockId).put("date",v.date).put("quantity",v.quantity)) }
+        })
+        root.put("activity", JSONArray().apply {
+            next.activity.takeLast(120).forEach { v -> put(JSONObject().put("id",v.id)
+                .put("actor",v.actor).put("title",v.title).put("kind",v.kind)
+                .put("createdAt",v.createdAt)) }
+        })
         prefs.edit().putString("data",root.toString()).apply()
         mutable.value = next.copy(syncStatus = "Lokal gespeichert")
     }
     private fun mutate(fn: (HouseholdData) -> HouseholdData) = save(fn(mutable.value))
+    private fun withEvent(h: HouseholdData, title: String, kind: String): HouseholdData =
+        h.copy(activity = (h.activity + ActivityEntry(id(), h.ownName, title,
+            kind, System.currentTimeMillis())).takeLast(120))
 
     override fun addShopping(name: String, quantity: String, unit: String, category: String, price: Double, listId: String) =
         mutate { h ->
-            val duplicate = h.shopping.firstOrNull {
+            val initial = withEvent(h, "Artikel hinzugefügt: " + name.trim(), "shopping")
+            val duplicate = initial.shopping.firstOrNull {
                 !it.bought && it.listId == listId && it.name.equals(name.trim(), ignoreCase = true)
                     && it.unit.equals(unit, ignoreCase = true)
             }
@@ -111,11 +156,11 @@ class LocalStore(private val context: Context) : HouseholdStore {
             if (duplicate != null && oldQty != null && newQty != null) {
                 val sum = oldQty + newQty
                 val qty = if (sum == sum.toLong().toDouble()) sum.toLong().toString() else sum.toString()
-                h.copy(shopping = h.shopping.map {
+                initial.copy(shopping = initial.shopping.map {
                     if (it.id == duplicate.id) it.copy(quantity = qty, price = it.price + price) else it
                 })
             } else {
-                h.copy(shopping = h.shopping + ShoppingItem(id(), name.trim(), quantity, unit, category, price = price, listId = listId))
+                initial.copy(shopping = initial.shopping + ShoppingItem(id(), name.trim(), quantity, unit, category, price = price, listId = listId))
             }
         }
     override fun addShoppingList(name: String) =
@@ -125,7 +170,10 @@ class LocalStore(private val context: Context) : HouseholdStore {
     override fun updateShopping(item: ShoppingItem) =
         mutate { h -> h.copy(shopping = h.shopping.map { if (it.id == item.id) item else it }) }
     override fun setShoppingDone(item: ShoppingItem, done: Boolean) = mutate { h ->
-        h.copy(shopping = h.shopping.map {
+        val source = h.shopping.firstOrNull { it.id == item.id }
+        if (source == null || source.bought == done) h else withEvent(h,
+            if (done) "Eingekauft: " + source.name else "Wieder geöffnet: " + source.name,
+            "shopping").copy(shopping = h.shopping.map {
             if(it.id == item.id) it.copy(bought = done, doneBy = if(done) "local" else "",
                 doneByName = if(done) "Ich" else "",
                 boughtAt = if(done) LocalDate.now().toString() else "",
@@ -159,7 +207,8 @@ class LocalStore(private val context: Context) : HouseholdStore {
                     assignee = TaskPlanner.nextAssignee(current.assignee, current.rotate, h.members.map { it.name }),
                     done = false, doneBy = "", doneByName = ""))
             } else emptyList()
-            h.copy(tasks = updated + next)
+            withEvent(h, if(done) "Aufgabe erledigt: " + current.title else
+                "Aufgabe wieder geöffnet: " + current.title, "tasks").copy(tasks = updated + next)
         }
     }
     override fun deleteTask(item: HouseholdTask) =
@@ -185,12 +234,17 @@ class LocalStore(private val context: Context) : HouseholdStore {
             )
         }
     override fun changeStock(item: StockItem, amount: Int) = mutate { h ->
-        val newQuantity = (item.quantity + amount).coerceAtLeast(0)
-        val newlyLow = item.quantity > item.minimum && newQuantity <= item.minimum
+        val current = h.stock.firstOrNull { it.id == item.id } ?: return@mutate h
+        val newQuantity = (current.quantity + amount).coerceAtLeast(0)
+        val used = (current.quantity - newQuantity).coerceAtLeast(0)
+        val newlyLow = current.quantity > current.minimum && newQuantity <= current.minimum
         val alreadyListed = h.shopping.any { !it.bought && it.name.equals(item.name, ignoreCase = true) }
-        h.copy(stock = h.stock.map { if(it.id == item.id) it.copy(quantity = newQuantity) else it },
+        val changed = h.copy(stock = h.stock.map { if(it.id == item.id) it.copy(quantity = newQuantity) else it },
+            stockUsage = if (used > 0) (h.stockUsage + StockUsage(id(), item.id,
+                LocalDate.now().toString(), used)).takeLast(1000) else h.stockUsage,
             shopping = if(newlyLow && !alreadyListed) h.shopping + ShoppingItem(
                 id(), item.name, "1", item.unit, "Vorrat") else h.shopping)
+        withEvent(changed, item.name + ": Bestand " + newQuantity, "stock")
     }
     override fun deleteStock(item: StockItem) =
         mutate { it.copy(stock = it.stock.filterNot { s -> s.id == item.id }) }
@@ -199,6 +253,24 @@ class LocalStore(private val context: Context) : HouseholdStore {
         mutate { it.copy(meals = it.meals + MealEntry(id(), date, slot, title.trim(), ingredients.trim())) }
     override fun deleteMeal(item: MealEntry) =
         mutate { it.copy(meals = it.meals.filterNot { m -> m.id == item.id }) }
+    override fun saveTemplate(name: String, products: List<TemplateProduct>) = mutate { h ->
+        h.copy(templates = h.templates + ShoppingTemplate(id(), name.trim(), products.take(100)))
+    }
+    override fun deleteTemplate(template: ShoppingTemplate) = mutate { h ->
+        h.copy(templates = h.templates.filterNot { it.id == template.id })
+    }
+    override fun addReceipt(merchant: String, date: String, total: Double, note: String) = mutate { h ->
+        h.copy(receipts = h.receipts + ReceiptEntry(id(), merchant.trim(), date, total.coerceAtLeast(0.0), note))
+    }
+    override fun deleteReceipt(item: ReceiptEntry) = mutate { h ->
+        h.copy(receipts = h.receipts.filterNot { it.id == item.id })
+    }
+    override fun addRecipe(name: String, portions: Int, ingredients: String) = mutate { h ->
+        h.copy(recipes = h.recipes + RecipeEntry(id(), name.trim(), portions.coerceAtLeast(1), ingredients))
+    }
+    override fun deleteRecipe(item: RecipeEntry) = mutate { h ->
+        h.copy(recipes = h.recipes.filterNot { it.id == item.id })
+    }
     override fun removeMember(uid: String) {}
     override fun transferOwnership(uid: String, reply: (String) -> Unit) = reply("Nur mit Cloud-Konto möglich")
     override fun revokeInvite(code: String, reply: (String) -> Unit) = reply("Nur mit Cloud-Konto möglich")
