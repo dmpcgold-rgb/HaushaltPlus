@@ -332,16 +332,38 @@ private fun DashboardCard(title: String, value: String, caption: String, icon: a
 
 @Composable
 private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: Modifier = Modifier,
-    activeListId: String, onSelectList: (String) -> Unit, onNewList: () -> Unit) {
+    activeListId: String, onSelectList: (String) -> Unit, onNewList: () -> Unit,
+    onScan: () -> Unit, scanStatus: String) {
     var showBought by remember { mutableStateOf(true) }
     var listExpanded by remember { mutableStateOf(false) }
     var pendingDeletion by remember { mutableStateOf<ShoppingItem?>(null) }
+    var editing by remember { mutableStateOf<ShoppingItem?>(null) }
+    var renaming by remember { mutableStateOf<ShoppingList?>(null) }
+    var search by remember { mutableStateOf("") }
     val inList = data.shopping.filter { it.listId == activeListId }
-    val ordered = inList.filter { showBought || !it.bought }.sortedWith(compareBy<ShoppingItem> { it.bought }.thenBy { it.category }.thenBy { it.name.lowercase() })
+    val ordered = inList.filter { (showBought || !it.bought) && it.name.contains(search, ignoreCase = true) }
+        .sortedWith(compareBy<ShoppingItem> { it.bought }.thenBy { it.category }.thenBy { it.name.lowercase() })
+    val favorites = data.shopping.filter { it.bought }.groupingBy { it.name.trim() }.eachCount().entries
+        .sortedByDescending { it.value }.take(4).map { it.key }
     val total = inList.filter { !it.bought }.sumOf { it.price }
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Header("Einkaufslisten", "Gemeinsam einkaufen, live abhaken")
+            if (scanStatus.isNotBlank()) Text(scanStatus, color = AccentTeal, style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = onScan) { Icon(Icons.Default.QrCodeScanner, "Barcode scannen"); Text(" Barcode") }
+            OutlinedTextField(search, { search = it }, label = { Text("Artikel suchen") },
+                leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            if (favorites.isNotEmpty()) {
+                Text("HÄUFIG GEKAUFT", color = AccentPink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    favorites.forEach { name ->
+                        val old = data.shopping.firstOrNull { it.name == name }
+                        AssistChip(onClick = { store.addShopping(name, "1", old?.unit ?: "Stk",
+                            old?.category ?: "Lebensmittel", old?.price ?: 0.0, activeListId) },
+                            label = { Text("+ " + name) })
+                    }
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) {
                     OutlinedButton(onClick = { listExpanded = true }) {
@@ -355,6 +377,9 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
                     }
                 }
                 TextButton(onClick = onNewList) { Icon(Icons.Default.Add, null); Text("Neue Liste") }
+                val currentList = data.lists.firstOrNull { it.id == activeListId }
+                if (currentList != null && currentList.id != "standard")
+                    IconButton(onClick = { renaming = currentList }) { Icon(Icons.Default.Edit, "Liste umbenennen") }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Offen: ${inList.count { !it.bought }}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
@@ -378,17 +403,32 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
                             style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                         if (item.bought && item.doneByName.isNotBlank()) Text("Erledigt von ${item.doneByName}", style = MaterialTheme.typography.labelSmall, color = Mint)
                     }
+                    IconButton(onClick = { editing = item }) { Icon(Icons.Default.Edit, "Artikel bearbeiten") }
                     IconButton(onClick = { pendingDeletion = item }) { Icon(Icons.Default.DeleteOutline, "Löschen") }
                 }
             }
         }
     }
     pendingDeletion?.let { item -> ConfirmDelete("${item.name} entfernen?") { yes -> if (yes) store.deleteShopping(item); pendingDeletion = null } }
+    editing?.let { item -> EditShoppingDialog(item, onDismiss = { editing = null }, onSave = {
+        store.updateShopping(it); editing = null
+    }) }
+    renaming?.let { list ->
+        var name by remember(list.id) { mutableStateOf(list.name) }
+        AlertDialog(onDismissRequest = { renaming = null }, title = { Text("Liste umbenennen") },
+            text = { OutlinedTextField(name, { name = it }, label = { Text("Name") }) },
+            confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = {
+                store.renameShoppingList(list, name); renaming = null
+            }) { Text("Speichern") } },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Abbrechen") } })
+    }
+
 }
 
 @Composable
 private fun TasksPage(data: HouseholdData, store: HouseholdStore, modifier: Modifier = Modifier) {
     var pendingDeletion by remember { mutableStateOf<HouseholdTask?>(null) }
+    var editing by remember { mutableStateOf<HouseholdTask?>(null) }
     val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
     val sorted = data.tasks.sortedWith(compareBy<HouseholdTask> { it.done }.thenBy { it.due.ifBlank { "9999" } })
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -403,23 +443,40 @@ private fun TasksPage(data: HouseholdData, store: HouseholdStore, modifier: Modi
                         Text("Zuständig: ${task.assignee}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                         if (task.due.isNotBlank()) Text("Fällig: ${task.due}" + if(!task.done && task.due < today) " · Überfällig" else "",
                             style = MaterialTheme.typography.bodySmall, color = if(!task.done && task.due < today) Color(0xFFB64029) else Color.Gray)
-                        if (task.repeat != "Nie") Text("Wiederholt sich: ${task.repeat}", style = MaterialTheme.typography.labelSmall, color = Mint)
+                        if (task.repeat != "Nie") Text("Wiederholt sich: " + task.repeat +
+                            if (task.rotate) " · Wechselnde Zuständigkeit" else "",
+                            style = MaterialTheme.typography.labelSmall, color = Mint)
                         if (task.done && task.doneByName.isNotBlank()) Text("Erledigt von ${task.doneByName}", style = MaterialTheme.typography.labelSmall, color = Mint)
                     }
+                    IconButton(onClick = { editing = task }) { Icon(Icons.Default.Edit, "Aufgabe bearbeiten") }
                     IconButton(onClick = { pendingDeletion = task }) { Icon(Icons.Default.DeleteOutline, "Löschen") }
                 }
             }
         }
     }
     pendingDeletion?.let { task -> ConfirmDelete("${task.title} entfernen?") { yes -> if (yes) store.deleteTask(task); pendingDeletion = null } }
+    editing?.let { task -> EditTaskDialog(task, data, onDismiss = { editing = null }, onSave = {
+        store.updateTask(it); editing = null
+    }) }
+
 }
 
 @Composable
 private fun StockPage(data: HouseholdData, store: HouseholdStore, modifier: Modifier = Modifier) {
     var pendingDeletion by remember { mutableStateOf<StockItem?>(null) }
+    var editing by remember { mutableStateOf<StockItem?>(null) }
     val sorted = data.stock.sortedWith(compareBy<StockItem> { it.quantity > it.minimum }.thenBy { it.name })
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { Header("Vorratskammer", "Was ist noch da – was fehlt bald?") }
+        item {
+            Header("Vorratskammer", "Was ist noch da – was fehlt bald?")
+            TextButton(onClick = {
+                data.stock.filter { it.quantity <= it.minimum }.forEach { stock ->
+                    if (data.shopping.none { !it.bought && it.name.equals(stock.name, ignoreCase = true) }) {
+                        store.addShopping(stock.name, "1", stock.unit, "Vorrat", 0.0)
+                    }
+                }
+            }) { Icon(Icons.Default.AddShoppingCart, null); Text("Fehlende Produkte übernehmen") }
+        }
         if (sorted.isEmpty()) item { EmptyMessage("Noch keine Vorräte", "Mit + legst du den ersten Vorrat an.") }
         items(sorted, key = { it.id }) { stock ->
             ElevatedCard(Modifier.fillMaxWidth()) {
@@ -430,6 +487,7 @@ private fun StockPage(data: HouseholdData, store: HouseholdStore, modifier: Modi
                             Text("Minimum: ${stock.minimum} ${stock.unit}", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                         }
                         if (stock.quantity <= stock.minimum) Text("Nachkaufen", color = Color(0xFFB64029), style = MaterialTheme.typography.labelMedium)
+                        IconButton(onClick = { editing = stock }) { Icon(Icons.Default.Edit, "Vorrat bearbeiten") }
                         IconButton(onClick = { pendingDeletion = stock }) { Icon(Icons.Default.DeleteOutline, "Entfernen") }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -444,6 +502,10 @@ private fun StockPage(data: HouseholdData, store: HouseholdStore, modifier: Modi
         }
     }
     pendingDeletion?.let { stock -> ConfirmDelete("${stock.name} entfernen?") { yes -> if (yes) store.deleteStock(stock); pendingDeletion = null } }
+    editing?.let { stock -> EditStockDialog(stock, onDismiss = { editing = null }, onSave = {
+        store.updateStock(it); editing = null
+    }) }
+
 }
 
 @Composable
