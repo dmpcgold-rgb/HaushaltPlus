@@ -1,4 +1,4 @@
-# Haushalt+ v0.3.0 – Android-Familienhaushalt
+# Haushalt+ v0.4.0 – Android-Familienhaushalt
 
 Native Kotlin-/Jetpack-Compose-App mit RAUS0-inspiriertem **dunklem Neon-Design** (Schwarz/Carbon, Orange, Pink, Türkis und Blau). Android-Paketname: `at.familie.haushaltplus`. Quellcode ausschließlich im Gold-Repository `dmpcgold-rgb/HaushaltPlus`.
 
@@ -14,6 +14,30 @@ Native Kotlin-/Jetpack-Compose-App mit RAUS0-inspiriertem **dunklem Neon-Design*
 8. **Barcode-Scanner:** Google Code Scanner (Google Play Services, keine Kamera-Appberechtigung) und einzelne, vom Nutzer ausgelöste Produktnamensabfragen bei Open Food Facts. Offline/bei unbekannten Produkten bleibt der Code als bearbeitbarer Name stehen.
 9. **Essensplan:** Mahlzeiten für die kommenden sieben Tage; Zutaten aus kommagetrennten Rezeptlisten auf die Einkaufsliste übernehmen.
 10. **Daten und Kontosicherheit:** JSON-Export über Android-Dateiauswahl, bestätigter Import fehlender Einträge, Passwort-Zurücksetzen per E-Mail, Konto-Löschung für Nicht-Besitzer nach Reauthentifizierung; Besitzer übertragen vorher die Verwaltung.
+
+## Neu in v0.4.0: zusätzliche Funktionen und Qualitätsverbesserungen
+
+1. **Haushalts-Sicherheit:** eigene Firestore-Emulatortests für Benutzerrechte und fremde Haushalte, strikte Regeln für Preis-, Checklisten- und Papierkorb-Collections. In GitHub Actions laufen die Regeln auf einem Demo-Emulator, nicht auf echten Familiendaten.
+2. **Akkusparmodus:** frei wählbare Hintergrundprüfung ungefähr stündlich statt alle 15 Minuten; Android kann beide verzögern. WorkManager respektiert niedrigen Akkustand.
+3. **Offline-Kassenbon-OCR:** Kamera/Galerie über Android FileProvider, lokale ML Kit-Texterkennung mit Bestätigung von Datum, Geschäft, Betrag. Bilder werden nur temporär im Cache verarbeitet und anschließend gelöscht.
+4. **MHD-Verwaltung:** Ablaufdatum anlegen/bearbeiten, ablaufende Vorräte anzeigen, lokale Erinnerung vor dem Ablauf und bestätigtes Entfernen verbrauchter Ware.
+5. **Android-Widget:** Anzeige der zuletzt synchronisierten offenen Einkäufe/Aufgaben und Direktstart von Einkauf (Schnell-Hinzufügen) oder Aufgaben ohne Hintergrundabfragen.
+6. **30-Tage-Papierkorb:** gelöschte Einkaufsartikel, Aufgaben, Rezepte und Vorräte bleiben wiederherstellbar. Altbestände werden lokal bei der nächsten Datenspeicherung bzw. in der Cloud beim nächsten Online-Öffnen bereinigt.
+7. **Eigener Preisverlauf:** historische selbst erfasste Stück-/Einheitspreise nach Geschäft und Produkt; keine behaupteten Live-Marktpreise.
+8. **Maßeinheiten:** numerische Mengen g/kg, ml/l sowie gleiche Stück-/Packungseinheiten können bei doppelten Einkaufsartikeln zusammengeführt werden.
+9. **Faire Aufgabenzuteilung:** Vorschlag anhand erledigter und offener Arbeiten; bestehende Aufgaben werden nicht ohne Zustimmung verändert.
+10. **Haushalts-Checklisten:** Vorlagen speichern und auf einmal als mehrere Aufgaben übernehmen.
+11. **Drag-and-drop:** Startseitenkacheln, Einkaufsartikel und Aufgaben lassen sich auf dem Gerät manuell sortieren; für TalkBack bleiben die Optionen „Nach oben“ und „Nach unten“ verfügbar.
+12. **Barrierefreiheit:** hoher Kontrast, Android-Schriftvergrößerung, benannte Aktionen und große Interaktionsflächen.
+13. **Globale Suche:** nach Artikeln, Aufgaben, Rezepten, Vorräten, Belegen und Checklisten suchen und zum Bereich springen.
+14. **Designoptionen:** auswählbare Akzentfarbe, kontrastreichere Darstellung und kompaktere Karten. Akzentfarben werden beim nächsten App-Neustart angewendet.
+15. **Diagnose:** Status der Synchronisierung, Netzverbindung, letzte bestätigte Einkaufssynchronisierung, Fehleranzeige und Bericht ohne Namen, Mail-Adressen oder Konto-IDs.
+
+**Wichtig:** Für die neuen Cloud-Collections müssen die aktuellsten `firestore.rules` in der Firebase Console veröffentlicht werden. Der App-Build veröffentlicht Regeln nicht automatisch. Bis zur Veröffentlichung funktionieren Preisverlauf, Checklisten und Papierkorb im Cloud-Modus nicht zuverlässig. Weiterhin kein Blaze-Tarif, keine kostenpflichtigen Cloud Functions, keine sofort garantierten Push-Benachrichtigungen.
+
+Die **Android-Debug-APK** erfordert noch einen vollständigen Praxistest auf zwei echten Handys. Vor einem Test mit echten Daten bitte JSON-Backup exportieren.
+
+**Backup v4:** Einkaufslisten, Aufgaben, Rezepte, Vorlagen, Belege, Preise und Checklisten werden exportiert und ergänzend importiert. Papierkorb-Metadaten werden aus Datenschutzgründen nicht importiert; archivierte Cloud-Daten bleiben im Cloud-Konto.
 
 ## Neu in v0.3.0: 15 Funktions- und Designverbesserungen
 

@@ -320,6 +320,20 @@ class CloudStore(
         listeners += home.collection("trash").orderBy("deletedAt", Query.Direction.DESCENDING)
             .limit(100).addSnapshotListener { snap, e ->
                 if (e != null) { setError(e); return@addSnapshotListener }
+                if (snap != null && !snap.metadata.isFromCache) {
+                    // Cleanup occurs when a household member next opens the app.
+                    // No scheduled paid Cloud Function and no user data overwritten.
+                    val now = System.currentTimeMillis()
+                    val expiredDocs = snap.documents.filter { d ->
+                        val deletedAt = d.getLong("deletedAt") ?: 0L
+                        deletedAt > 0L && now - deletedAt >= 30L * 86_400_000L
+                    }
+                    if (expiredDocs.isNotEmpty()) {
+                        val batch = db.batch()
+                        expiredDocs.forEach { batch.delete(it.reference) }
+                        batch.commit().addOnFailureListener(::setError)
+                    }
+                }
                 mutable.value = mutable.value.copy(trash = snap?.documents?.map { d ->
                     TrashEntry(d.id, d.getString("type") ?: "", d.getString("label") ?: "",
                         d.getString("payload") ?: "", d.getLong("deletedAt") ?: 0L)

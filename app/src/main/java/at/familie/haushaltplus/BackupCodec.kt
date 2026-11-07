@@ -10,7 +10,7 @@ import org.json.JSONObject
 object BackupCodec {
     fun encode(data: HouseholdData): String {
         val root = JSONObject().put("format", "HaushaltPlus-backup")
-            .put("version", 3).put("name", data.name).put("monthlyBudget", data.monthlyBudget)
+            .put("version", 4).put("name", data.name).put("monthlyBudget", data.monthlyBudget)
         root.put("lists", JSONArray().apply { data.lists.forEach { x ->
             put(JSONObject().put("id", x.id).put("name", x.name))
         } })
@@ -43,6 +43,13 @@ object BackupCodec {
         root.put("receipts", JSONArray().apply { data.receipts.forEach { x ->
             put(JSONObject().put("merchant", x.merchant).put("date", x.date)
                 .put("total", x.total).put("note", x.note))
+        } })
+        root.put("prices", JSONArray().apply { data.prices.forEach { x ->
+            put(JSONObject().put("product", x.product).put("shop", x.shop)
+                .put("unitPrice", x.unitPrice).put("unit", x.unit).put("date", x.date))
+        } })
+        root.put("checklists", JSONArray().apply { data.checklists.forEach { x ->
+            put(JSONObject().put("name", x.name).put("tasks", JSONArray(x.tasks)))
         } })
         return root.toString(2)
     }
@@ -121,6 +128,29 @@ object BackupCodec {
                 existing.receipts.any { it.merchant.equals(merchant, true) &&
                     it.date == date && it.total == value }) continue
             store.addReceipt(merchant, date, value, o.optString("note"))
+            inserted++
+        }
+        for (o in rows("prices")) {
+            val name = o.optString("product").trim()
+            val shop = o.optString("shop").trim()
+            val unit = o.optString("unit", "Stk")
+            val date = o.optString("date")
+            val price = o.optDouble("unitPrice", -1.0)
+            if (name.isBlank() || shop.isBlank() || price <= 0.0 ||
+                runCatching { java.time.LocalDate.parse(date) }.isFailure ||
+                existing.prices.any { it.product.equals(name, true) && it.shop.equals(shop, true) &&
+                    it.date == date && it.unit == unit && it.unitPrice == price }) continue
+            store.addPrice(name, shop, price, unit, date)
+            inserted++
+        }
+        for (o in rows("checklists")) {
+            val name = o.optString("name").trim()
+            val arr = o.optJSONArray("tasks") ?: JSONArray()
+            val titles = (0 until arr.length()).map { arr.optString(it) }
+                .map(String::trim).filter(String::isNotBlank).take(80)
+            if (name.isBlank() || titles.isEmpty() ||
+                existing.checklists.any { it.name.equals(name, true) }) continue
+            store.saveChecklist(name, titles)
             inserted++
         }
         return inserted.toString() + " Einträge ergänzt (ohne vorhandene Daten zu überschreiben)"
