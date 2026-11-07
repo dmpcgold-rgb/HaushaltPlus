@@ -231,7 +231,8 @@ class CloudStore(
                     doc.getString("unit") ?: "Stk", doc.getString("category") ?: "Sonstiges",
                     doc.getBoolean("bought") ?: false, doc.getString("doneBy") ?: "", doc.getString("doneByName") ?: "",
                     doc.getDouble("price") ?: 0.0, doc.getString("listId") ?: "standard",
-                    doc.getString("boughtAt") ?: "", doc.getString("barcode") ?: "")
+                    doc.getString("boughtAt") ?: "", doc.getString("barcode") ?: "",
+                    doc.getBoolean("archived") ?: false)
             } ?: emptyList(), syncStatus = when {
                 snap?.metadata?.hasPendingWrites() == true -> "Wartet auf Sync"
                 snap?.metadata?.isFromCache == true -> "Offline verfügbar"
@@ -315,9 +316,22 @@ class CloudStore(
         home.collection("shoppingItems").document(item.id).update(mapOf("bought" to done,
             "doneBy" to if (done) uid else "", "doneByName" to if(done) userName else "",
             "boughtAt" to if (done) LocalDate.now().toString() else "",
+            "archived" to if (done) item.archived else false,
             "updatedAt" to FieldValue.serverTimestamp()))
             .addOnSuccessListener { recordActivity(userName + if (done) " hat " + item.name + " eingekauft" else " hat " + item.name + " wieder geöffnet", "shopping") }
             .addOnFailureListener(::setError)
+    }
+    override fun archiveCompletedShopping(listId: String) {
+        // Keep purchased documents for month totals and frequently bought suggestions.
+        // Chunk writes to stay below Firestore's batch-write limit.
+        mutable.value.shopping.filter { it.listId == listId && it.bought && !it.archived }
+            .chunked(300).forEach { items ->
+                val batch = db.batch()
+                items.forEach { item ->
+                    batch.update(home.collection("shoppingItems").document(item.id), "archived", true)
+                }
+                batch.commit().addOnFailureListener(::setError)
+            }
     }
     override fun deleteShopping(item: ShoppingItem) { home.collection("shoppingItems").document(item.id).delete().addOnFailureListener(::setError) }
     override fun addTask(title: String, assignee: String, due: String, repeat: String, rotate: Boolean) {

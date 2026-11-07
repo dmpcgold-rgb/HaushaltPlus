@@ -36,7 +36,7 @@ class LocalStore(private val context: Context) : HouseholdStore {
                         it.optString("unit", "Stk"), it.optString("category", "Sonstiges"),
                         it.optBoolean("bought"), it.optString("doneBy"), it.optString("doneByName"),
                         it.optDouble("price", 0.0), it.optString("listId", "standard"),
-                        it.optString("boughtAt"), it.optString("barcode"))
+                        it.optString("boughtAt"), it.optString("barcode"), it.optBoolean("archived"))
                 },
                 tasks = list("tasks") {
                     HouseholdTask(it.optString("id"), it.optString("title"), it.optString("assignee", "Alle"),
@@ -72,7 +72,8 @@ class LocalStore(private val context: Context) : HouseholdStore {
                 put(JSONObject().put("id",v.id).put("name",v.name).put("quantity",v.quantity)
                     .put("unit",v.unit).put("category",v.category).put("bought",v.bought)
                     .put("doneBy",v.doneBy).put("doneByName",v.doneByName).put("price",v.price)
-                    .put("listId",v.listId).put("boughtAt",v.boughtAt).put("barcode",v.barcode))
+                    .put("listId",v.listId).put("boughtAt",v.boughtAt).put("barcode",v.barcode)
+                    .put("archived",v.archived))
             }
         })
         root.put("tasks", JSONArray().apply {
@@ -127,7 +128,13 @@ class LocalStore(private val context: Context) : HouseholdStore {
         h.copy(shopping = h.shopping.map {
             if(it.id == item.id) it.copy(bought = done, doneBy = if(done) "local" else "",
                 doneByName = if(done) "Ich" else "",
-                boughtAt = if(done) LocalDate.now().toString() else "") else it
+                boughtAt = if(done) LocalDate.now().toString() else "",
+                archived = if (done) it.archived else false) else it
+        })
+    }
+    override fun archiveCompletedShopping(listId: String) = mutate { h ->
+        h.copy(shopping = h.shopping.map { item ->
+            if (item.listId == listId && item.bought) item.copy(archived = true) else item
         })
     }
     override fun deleteShopping(item: ShoppingItem) =

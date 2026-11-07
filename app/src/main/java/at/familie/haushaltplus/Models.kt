@@ -6,7 +6,8 @@ data class ShoppingItem(
     val id: String = "", val name: String = "", val quantity: String = "1",
     val unit: String = "Stk", val category: String = "Sonstiges", val bought: Boolean = false,
     val doneBy: String = "", val doneByName: String = "", val price: Double = 0.0,
-    val listId: String = "standard", val boughtAt: String = "", val barcode: String = ""
+    val listId: String = "standard", val boughtAt: String = "", val barcode: String = "",
+    val archived: Boolean = false
 )
 data class HouseholdTask(
     val id: String = "", val title: String = "", val assignee: String = "Alle",
@@ -40,6 +41,7 @@ interface HouseholdStore {
     fun renameShoppingList(list: ShoppingList, name: String)
     fun updateShopping(item: ShoppingItem)
     fun setShoppingDone(item: ShoppingItem, done: Boolean)
+    fun archiveCompletedShopping(listId: String)
     fun deleteShopping(item: ShoppingItem)
     fun addTask(title: String, assignee: String, due: String, repeat: String, rotate: Boolean = false)
     fun updateTask(task: HouseholdTask)

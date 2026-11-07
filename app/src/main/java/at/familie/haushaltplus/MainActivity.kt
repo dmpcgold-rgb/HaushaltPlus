@@ -333,13 +333,17 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
     activeListId: String, onSelectList: (String) -> Unit, onNewList: () -> Unit,
     onScan: () -> Unit, scanStatus: String) {
     var showBought by remember { mutableStateOf(true) }
+    var showArchived by rememberSaveable { mutableStateOf(false) }
+    var confirmArchive by remember { mutableStateOf(false) }
     var listExpanded by remember { mutableStateOf(false) }
     var pendingDeletion by remember { mutableStateOf<ShoppingItem?>(null) }
     var editing by remember { mutableStateOf<ShoppingItem?>(null) }
     var renaming by remember { mutableStateOf<ShoppingList?>(null) }
     var search by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
-    val inList = data.shopping.filter { it.listId == activeListId }
+    val inList = data.shopping.filter { it.listId == activeListId &&
+        (showArchived || !it.archived) }
+    val archivableCount = data.shopping.count { it.listId == activeListId && it.bought && !it.archived }
     val ordered = inList.filter { (showBought || !it.bought) && it.name.contains(search, ignoreCase = true) }
         .sortedWith(compareBy<ShoppingItem> { it.bought }.thenBy { it.category }.thenBy { it.name.lowercase() })
     val favorites = data.shopping.filter { it.bought }.groupingBy { it.name.trim() }.eachCount().entries
@@ -401,6 +405,15 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
                 Checkbox(showBought, { showBought = it })
                 Text("Erledigte Artikel anzeigen")
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(showArchived, { showArchived = it })
+                Text("Archivierte anzeigen")
+            }
+            if (archivableCount > 0) TextButton(onClick = { confirmArchive = true }) {
+                Icon(Icons.Default.Inventory2, "Archivieren")
+                Spacer(Modifier.width(6.dp))
+                Text("$archivableCount erledigte archivieren")
+            }
         }
         if (ordered.isEmpty()) item { EmptyMessage("Noch nichts auf der Liste", "Mit + kannst du einen Artikel hinzufügen.") }
         items(ordered, key = { it.id }) { item ->
@@ -436,6 +449,17 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
             }
         }
     }
+    if (confirmArchive) AlertDialog(
+        onDismissRequest = { confirmArchive = false },
+        title = { Text("Einkäufe archivieren?") },
+        text = { Text("$archivableCount erledigte Artikel werden aus der aktiven Liste ausgeblendet. Sie bleiben für Monatsbudget und Einkaufshistorie gespeichert.") },
+        confirmButton = { TextButton(onClick = {
+            store.archiveCompletedShopping(activeListId)
+            confirmArchive = false
+            showArchived = false
+        }) { Text("Archivieren") } },
+        dismissButton = { TextButton(onClick = { confirmArchive = false }) { Text("Abbrechen") } }
+    )
     pendingDeletion?.let { item -> ConfirmDelete("${item.name} entfernen?") { yes -> if (yes) store.deleteShopping(item); pendingDeletion = null } }
     editing?.let { item -> EditShoppingDialog(item, onDismiss = { editing = null }, onSave = {
         store.updateShopping(it); editing = null
