@@ -1,12 +1,12 @@
 # Haushalt+ — Android-Haushaltsmanager (MVP)
 
-**Status:** Android-Quellprojekt mit lokalem Modus und optionaler Firebase-Cloud. Noch keine signierte Release-APK und noch kein live eingerichtetes Firebase-Projekt.
+**Status:** Android-Quellprojekt mit lokalem Modus und Firebase-Spark-Anbindung. Kein signierter Release-Build. Firebase Authentication, Firestore und die aktuellen Zugriffsregeln müssen in der Console aktiviert werden.
 
 ## Bereits implementiert
 
 - Übersicht: offene Einkäufe, Aufgaben, fehlende Vorräte, Einkaufsfortschritt
 - Einkauf: mehrere frei benennbare Listen, Artikel, Menge, Einheit, Kategorie, Preisrichtwert, Haken, „erledigt von“, Löschen
-- Aufgaben: Zuständigkeit, Fälligkeit, Erledigtstatus, Wiederholungsrhythmus mit automatischer Folgeaufgabe (lokal oder per Cloud Function), Löschen
+- Aufgaben: Zuständigkeit, Fälligkeit, Erledigtstatus, Wiederholungsrhythmus mit automatischer Folgeaufgabe (lokal oder im Android-Cloud-Client), Löschen
 - Vorrat: Mengen verwalten, Mindestbestand, auf Einkaufsliste setzen
 - Lokaler Modus: dauerhaft auf dem Gerät gespeicherte Daten, **keine** Familie-/Cloud-Funktion
 - Cloud-Modus: E-Mail/Passwort-Konten, Haushalt gründen, per 20-stelligem Code beitreten, Firestore-Echtzeitsync, Firestore-Zugriffsregeln
@@ -26,7 +26,7 @@ Falls du eine Debug-APK über GitHub Actions bauen möchtest: neues Repository a
 3. Die heruntergeladene `google-services.json` **lokal** unter `app/google-services.json` ablegen, **nicht** öffentlich committen.
 4. Authentifizierung → **E-Mail/Passwort** aktivieren. Firestore-Datenbank in EU-Region erstellen.
 5. `firebase deploy --only firestore:rules` aus dem Projektordner ausführen.
-6. Cloud Functions benötigt in der Regel die Firebase-**Blaze-Abrechnung**: `cd functions && npm install`; dann `firebase deploy --only functions`. Kosten-/Budgetbenachrichtigungen in Google Cloud konfigurieren.
+6. Auf dem **kostenlosen Spark-Tarif** bleiben. **Keine Cloud Functions installieren oder deployen.** Die Android-App erzeugt Folgeaufgaben und kostenlose Benachrichtigungsereignisse direkt.
 7. Bei GitHub Actions: Repository Secret `FIREBASE_GOOGLE_SERVICES_JSON` mit dem **vollen JSON-Inhalt** setzen, damit der Debug-APK-Workflow einen Cloud-Build erzeugt.
 8. Auf mehreren Handys die Cloud-APK installieren, für jede Person ein eigenes Konto anlegen und mit dem 20-stelligen Einladungscode beitreten. Android-Benachrichtigungen erlauben.
 
@@ -34,8 +34,8 @@ Falls du eine Debug-APK über GitHub Actions bauen möchtest: neues Repository a
 
 - Listen sind nur für Mitglieder sichtbar (Firestore Security Rules).
 - Einladungscodes sind zufällig, 20 Zeichen lang und 30 Tage gültig. Wer einen gültigen Code kennt und ein Konto hat, kann beitreten; Code wie ein Passwort behandeln.
-- Push wird von **Serverfunktionen** ausgelöst, nicht vom Gerät eines anderen Mitglieds. Ohne Deployment der Funktionen kommt **kein echter Remote-Push**.
-- Der Cloud-Modus hat noch keine Konto-Wiederherstellung/Passwort-zurücksetzen-UI, Admin-Mitgliederverwaltung, Mehrgeräte-Push pro Nutzer oder Datenmigration von lokal in Cloud. Diese Punkte gehören auf die Roadmap.
+- Kostenloser Benachrichtigungsmodus ohne Server: Firestore-Ereignisse werden von anderen Geräten gelesen und als lokale Android-Meldung angezeigt. Bei geschlossener App kann die Zustellung deutlich verzögert sein. **Kein sofortiger FCM-Remote-Push**.
+- Der Cloud-Modus hat noch keine Konto-Wiederherstellung/Passwort-zurücksetzen-UI, Admin-Mitgliederverwaltung, echte Mehrgeräte-Push-Zustellung oder Datenmigration von lokal in Cloud. Diese Punkte gehören auf die Roadmap.
 - `google-services.json`, Signaturschlüssel und Service-Account-Zugangsdaten niemals ins öffentliche Repository stellen.
 
 ## Geplante Erweiterungen
