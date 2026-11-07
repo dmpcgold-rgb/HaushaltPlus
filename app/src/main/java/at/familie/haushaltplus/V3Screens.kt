@@ -357,16 +357,20 @@ private fun DashboardSettingsScreen() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("haushalt_v3_ui", Context.MODE_PRIVATE) }
     var order by remember { mutableStateOf(DashboardOptions.read(context)) }
-    var version by remember { mutableIntStateOf(0) }
+    var enabledCards by remember {
+        mutableStateOf(DashboardOptions.default.associateWith { key ->
+            prefs.getBoolean("dashboard_" + key, true)
+        })
+    }
     var reduceMotion by remember { mutableStateOf(prefs.getBoolean("reduce_motion", false)) }
     SectionHeader("Startseite gestalten", "Kacheln ein- und ausblenden oder in der Reihenfolge verschieben")
     order.forEachIndexed { index, key ->
-        val enabled = prefs.getBoolean("dashboard_" + key, true)
+        val enabled = enabledCards[key] ?: true
         ElevatedCard(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = enabled, onCheckedChange = {
+                    enabledCards = enabledCards + (key to it)
                     prefs.edit().putBoolean("dashboard_" + key, it).apply()
-                    version++
                 })
                 Text(DashboardOptions.labels[key] ?: key, Modifier.weight(1f))
                 IconButton(enabled = index > 0, onClick = {
@@ -397,6 +401,6 @@ private fun DashboardSettingsScreen() {
         prefs.edit().remove("dashboard_order").apply()
         DashboardOptions.default.forEach { prefs.edit().remove("dashboard_" + it).apply() }
         order = DashboardOptions.default
-        version++
+        enabledCards = DashboardOptions.default.associateWith { true }
     }) { Text("Standardansicht wiederherstellen") }
 }
