@@ -1,57 +1,44 @@
-# Haushalt+ — Android-Haushaltsmanager (MVP)
+# Haushalt+ v0.2 – Android-Familienhaushalt
 
-**Status:** Android-Quellprojekt mit lokalem Modus und Firebase-Spark-Anbindung. Kein signierter Release-Build. Firebase Authentication, Firestore und die aktuellen Zugriffsregeln müssen in der Console aktiviert werden.
+Native Kotlin-/Jetpack-Compose-App mit RAUS0-inspiriertem **dunklem Neon-Design** (Schwarz/Carbon, Orange, Pink, Türkis und Blau). Android-Paketname: `at.familie.haushaltplus`. Quellcode ausschließlich im Gold-Repository `dmpcgold-rgb/HaushaltPlus`.
 
-## Bereits implementiert
+## Funktionen von v0.2
 
-- Übersicht: offene Einkäufe, Aufgaben, fehlende Vorräte, Einkaufsfortschritt
-- Einkauf: mehrere frei benennbare Listen, Artikel, Menge, Einheit, Kategorie, Preisrichtwert, Haken, „erledigt von“, Löschen
-- Aufgaben: Zuständigkeit, Fälligkeit, Erledigtstatus, Wiederholungsrhythmus mit automatischer Folgeaufgabe (lokal oder im Android-Cloud-Client), Löschen
-- Vorrat: Mengen verwalten, Mindestbestand, auf Einkaufsliste setzen
-- Lokaler Modus: dauerhaft auf dem Gerät gespeicherte Daten, **keine** Familie-/Cloud-Funktion
-- Cloud-Modus: E-Mail/Passwort-Konten, Haushalt gründen, per 20-stelligem Code beitreten, Firestore-Echtzeitsync, Firestore-Zugriffsregeln
-- Kostenloser Spark-Modus: Aktivitäten in Firestore, lokale Handy-Benachrichtigungen bei aktiver App und Hintergrundkontrolle ab etwa 15 Minuten. Wiederkehrende Aufgaben werden direkt im Android-Client angelegt.
-- GitHub Actions zum Bauen einer **Debug-APK**
+1. **Intelligente Einkaufslisten:** Mehrere Listen, Umbenennen, Suchen, Artikel/Menge/Preis bearbeiten, häufig gekaufte Artikel als Schnellwahl und Zusammenlegen numerischer Doppeleinträge in derselben Liste.
+2. **Gemeinsamer Haushalt:** Firebase-Authentifizierung, 20-stelliger Einladungscode, Firestore-Echtzeitübertragung und Androids standardmäßig aktivierter Offline-Cache. Die App zeigt den Cloud-Synchronisierungsstatus; gleichzeitige Änderungen am selben Feld unterliegen der Firestore-Konfliktauflösung (last write wins).
+3. **Benachrichtigungen ohne Serverkosten:** Firestore-Aktivitäten mit lokalen Benachrichtigungen, je Kategorie abschaltbar; fällige Aufgaben werden höchstens einmal je Tag erinnert. Geöffnete App: zeitnah. Geschlossene App: WorkManager prüft frühestens ungefähr alle 15 Minuten; Android kann deutlich verzögern. **Nicht mit sofortigem FCM-Remote-Push verwechseln.**
+4. **Familienverwaltung:** Mitgliedsliste, Einladungen erstellen/teilen und widerrufen, Haushaltsmitglieder entfernen, Besitzverwaltung an ein anderes Mitglied übertragen.
+5. **Haushaltsplan:** Aufgaben bearbeiten, delegieren, Fälligkeit/Serienrhythmus einstellen, Zuständigkeit bei Wiederholung rotieren. Wiederholungen entstehen auf dem Gerät beim Erledigen.
+6. **Vorratsverwaltung:** Bestand und Mindestmenge bearbeiten; beim Unterschreiten wird ein benötigter Artikel auf die Einkaufsliste gesetzt; auch manuell als Sammelaktion möglich.
+7. **Monatsbudget:** Monatslimit und Übersicht gebuchter Einkäufe. Tatsächliche oder geplante Gesamtpreise werden über Artikel bearbeiten eingegeben. Ein automatischer Kassenbon-Scanner ist nicht enthalten.
+8. **Barcode-Scanner:** Google Code Scanner (Google Play Services, keine Kamera-Appberechtigung) und einzelne, vom Nutzer ausgelöste Produktnamensabfragen bei Open Food Facts. Offline/bei unbekannten Produkten bleibt der Code als bearbeitbarer Name stehen.
+9. **Essensplan:** Mahlzeiten für die kommenden sieben Tage; Zutaten aus kommagetrennten Rezeptlisten auf die Einkaufsliste übernehmen.
+10. **Daten und Kontosicherheit:** JSON-Export über Android-Dateiauswahl, bestätigter Import fehlender Einträge, Passwort-Zurücksetzen per E-Mail, Konto-Löschung für Nicht-Besitzer nach Reauthentifizierung; Besitzer übertragen vorher die Verwaltung.
 
-## Für einen offline nutzbaren Test
+## Kostenloser Spark-Tarif
 
-Projekt mit Android Studio öffnen und die App als Debug-Build bauen. Ohne `app/google-services.json` läuft Haushalt+ automatisch im lokalen Modus. Die Daten bleiben nach App-Neustart erhalten; andere Handys sehen sie **nicht**.
+Das Projekt ist fest auf Firebase **Spark (kostenlos)** ohne Abrechnung ausgelegt. `firebase.json` enthält ausschließlich Firestore-Regeln. Der ältere `functions/`-Prototyp wird **nicht deployt**. Auf **Blaze** darf ohne ausdrückliche neue Freigabe nicht gewechselt werden. Bei Überschreiten der freien Kontingente können Funktionen bis zum Quoten-Reset ausfallen.
 
-Falls du eine Debug-APK über GitHub Actions bauen möchtest: neues Repository anlegen, diesen Projektordner hochladen, Workflow `Android Debug APK` starten und das ZIP-Artefakt mit der APK herunterladen. Der Workflow braucht **kein** Firebase-Projekt für den lokalen Modus.
+- Firebase-Projekt: `haushaltplus-50075` (separates Google-Konto ist erlaubt)
+- GitHub: `dmpcgold-rgb/HaushaltPlus`
+- Firebase-Android-Konfiguration: über Secret `FIREBASE_GOOGLE_SERVICES_JSON` in GitHub Actions
+- Firestore-Regeln: `firestore.rules` (nach jeder Änderung **erneut in Firebase Console veröffentlichen**)
 
-## Echte Familienfreigabe aktivieren
+## Android-Builds
 
-1. Separates Firebase-Projekt für Haushalt+ erstellen (nicht das eines anderen Apps wiederverwenden).
-2. In Firebase Console eine Android-App mit Package-ID `at.familie.haushaltplus` registrieren.
-3. Die heruntergeladene `google-services.json` **lokal** unter `app/google-services.json` ablegen, **nicht** öffentlich committen.
-4. Authentifizierung → **E-Mail/Passwort** aktivieren. Firestore-Datenbank in EU-Region erstellen.
-5. `firebase deploy --only firestore:rules` aus dem Projektordner ausführen.
-6. Auf dem **kostenlosen Spark-Tarif** bleiben. **Keine Cloud Functions installieren oder deployen.** Die Android-App erzeugt Folgeaufgaben und kostenlose Benachrichtigungsereignisse direkt.
-7. Bei GitHub Actions: Repository Secret `FIREBASE_GOOGLE_SERVICES_JSON` mit dem **vollen JSON-Inhalt** setzen, damit der Debug-APK-Workflow einen Cloud-Build erzeugt.
-8. Auf mehreren Handys die Cloud-APK installieren, für jede Person ein eigenes Konto anlegen und mit dem 20-stelligen Einladungscode beitreten. Android-Benachrichtigungen erlauben.
+Die GitHub-Actions-Workflows `Android Debug APK` (rein lokal ohne Konfiguration) und `Android Firebase APK` (mit Secret) erzeugen **Debug-Test-APKs**. Die Builds sind keine stabil signierten Release-Versionen. APKs aus verschiedenen Runnern können inkompatible Debug-Signaturen verwenden: vorhandene lokale Daten vor einer Deinstallation separat sichern.
 
-### Sicherheits- und Datenschutzverhalten
+Ausführliche Konfigurationsschritte stehen in [FIREBASE_SETUP.md](FIREBASE_SETUP.md).
 
-- Listen sind nur für Mitglieder sichtbar (Firestore Security Rules).
-- Einladungscodes sind zufällig, 20 Zeichen lang und 30 Tage gültig. Wer einen gültigen Code kennt und ein Konto hat, kann beitreten; Code wie ein Passwort behandeln.
-- Kostenloser Benachrichtigungsmodus ohne Server: Firestore-Ereignisse werden von anderen Geräten gelesen und als lokale Android-Meldung angezeigt. Bei geschlossener App kann die Zustellung deutlich verzögert sein. **Kein sofortiger FCM-Remote-Push**.
-- Der Cloud-Modus hat noch keine Konto-Wiederherstellung/Passwort-zurücksetzen-UI, Admin-Mitgliederverwaltung, echte Mehrgeräte-Push-Zustellung oder Datenmigration von lokal in Cloud. Diese Punkte gehören auf die Roadmap.
-- `google-services.json`, Signaturschlüssel und Service-Account-Zugangsdaten niemals ins öffentliche Repository stellen.
+## Bewusste Grenzen
 
-## Geplante Erweiterungen
+- Neue v0.2-Features sind implementiert und werden mit GitHub Actions kompiliert; ein echter Test mit zwei Handys, Kamera-Scanner und Berechtigungen muss noch erfolgen.
+- Ohne erneute Veröffentlichung der aktualisierten Regeln funktionieren die neuen `meals`- und `activity`-Felder sowie Mitglieder-/Besitzerfunktionen ggf. nicht.
+- Import ist **ergänzend**, kein pixelgenauer Restore: Herkunfts-Listen-IDs, Erledigtstatus und der Eigentümer werden bei Import in einen neuen Haushalt nicht überschrieben.
+- Lokaler und Cloud-Modus migrieren nicht automatisch zwischen sich.
+- Sofortige serverseitige Push-Benachrichtigungen, automatische Kassenbon-OCR, geteilte Einzelberechtigungen je Liste und vollständige Konfliktauflösung sind nicht implementiert.
+- Bitte keine echten Haushaltsdaten laden, bevor Firestore-Regeln und Trennung zwischen Haushaltsmitgliedern geprüft wurden.
 
-- Einkaufslisten umbenennen, archivieren und gezielt mit einzelnen Personen teilen (aktuell für den ganzen Haushalt sichtbar)
-- Barcode-Scan und Produktvorschläge
-- Foto-/Kassenbon-Erfassung, tatsächliche Einkaufskosten und Budgetwarnungen
-- Erinnerungen vor Fälligkeit, Wochenplan, Müllabfuhrtermine
-- Vollständige Offline-Konfliktbehandlung, Änderungsverlauf und papierloser Haushaltskalender
-- Benachrichtigungseinstellungen, Mehrgeräte-Token, Personen aus Haushalt entfernen, Einladung widerrufen
-- UI-Tests, Firestore-Emulator-/Regeltests, signiertes Release-Build, interne Verteilung
+## Datenschutz
 
-
-## Nur kostenloser Spark-Tarif
-Haushalt+ ist für Spark vorgesehen: **Keine kostenpflichtigen Cloud Functions deployen und keinen Blaze-Plan aktivieren.** Die noch vorhandenen Dateien unter `functions/` sind ein nicht verwendeter Prototyp; `firebase.json` deklariert ausschließlich Firestore-Regeln.
-
-Die neue kostenlose Benachrichtigung verwendet Firestore-Aktivitäten mit Android-WorkManager. Die Zustellung bei geöffneter App ist zeitnah. Hintergrundchecks können aufgrund von Android-Energiesparmechanismen über 15 Minuten dauern. Es ist **kein sofortiges serverseitiges FCM-Push**. Für die Aktivitätsereignisse müssen die aktuellen Firestore-Regeln veröffentlicht werden.
-
-Benötigte Firebase-Dienste auf Spark: Firestore-Datenbank und E-Mail/Passwort-Anmeldung. Firebase-Quoten beachten. Siehe [FIREBASE_SETUP.md](FIREBASE_SETUP.md).
+Keine Passwörter oder Admin-Zugangsschlüssel im Repository speichern. `app/google-services.json` und Signierschlüssel sind durch `.gitignore` ausgeschlossen; Cloud-Config wird nur während des Builds aus dem GitHub-Secret erzeugt. Das Repository ist bei GitHub aktuell öffentlich; vor persönlichen Nutzerdaten empfiehlt sich ein privates Repository. 
