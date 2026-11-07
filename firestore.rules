@@ -69,11 +69,28 @@ service cloud.firestore {
       match /meals/{mealId} {
         allow read, write: if member(homeId);
       }
+      match /templates/{templateId} {
+        allow read, write: if member(homeId);
+      }
+      match /recipes/{recipeId} {
+        allow read, write: if member(homeId);
+      }
+      match /receipts/{receiptId} {
+        allow read, write: if member(homeId);
+      }
+      match /stockUsage/{usageId} {
+        allow read, write: if member(homeId);
+      }
       match /tasks/{taskId} {
         allow read, write: if member(homeId);
       }
       match /stock/{stockId} {
-        allow read, write: if member(homeId);
+        allow read: if member(homeId);
+        allow create, update: if member(homeId) &&
+          request.resource.data.quantity is int &&
+          request.resource.data.quantity >= 0 &&
+          request.resource.data.quantity <= 1000000;
+        allow delete: if member(homeId);
       }
       // Client-authored activity: only household members may read, and no member may forge another actor.
       match /activity/{eventId} {
@@ -84,7 +101,7 @@ service cloud.firestore {
           request.resource.data.actorName is string &&
           request.resource.data.title is string &&
           request.resource.data.title.size() <= 180 &&
-          request.resource.data.kind in ['all', 'shopping', 'tasks', 'family'] &&
+          request.resource.data.kind in ['all', 'shopping', 'tasks', 'family', 'stock', 'receipt', 'recipe'] &&
           request.resource.data.createdAt is timestamp;
         allow update, delete: if false;
       }

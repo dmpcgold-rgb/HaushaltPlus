@@ -264,10 +264,46 @@ class CloudStore(
                     doc.getString("title") ?: "", doc.getString("ingredients") ?: "")
             } ?: emptyList())
         }
+        listeners += home.collection("templates").addSnapshotListener { snap, e ->
+            if (e != null) { setError(e); return@addSnapshotListener }
+            mutable.value = mutable.value.copy(templates = snap?.documents?.map { doc ->
+                ShoppingTemplate(doc.id, doc.getString("name") ?: "",
+                    V3Logic.itemsFromJson(doc.getString("itemsJson") ?: "[]"))
+            } ?: emptyList())
+        }
+        listeners += home.collection("recipes").addSnapshotListener { snap, e ->
+            if (e != null) { setError(e); return@addSnapshotListener }
+            mutable.value = mutable.value.copy(recipes = snap?.documents?.map { doc ->
+                RecipeEntry(doc.id, doc.getString("name") ?: "",
+                    (doc.getLong("portions") ?: 2L).toInt(), doc.getString("ingredients") ?: "")
+            } ?: emptyList())
+        }
+        listeners += home.collection("receipts").addSnapshotListener { snap, e ->
+            if (e != null) { setError(e); return@addSnapshotListener }
+            mutable.value = mutable.value.copy(receipts = snap?.documents?.map { doc ->
+                ReceiptEntry(doc.id, doc.getString("merchant") ?: "", doc.getString("date") ?: "",
+                    doc.getDouble("total") ?: 0.0, doc.getString("note") ?: "")
+            } ?: emptyList())
+        }
+        listeners += home.collection("stockUsage").orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(300).addSnapshotListener { snap, e ->
+                if (e != null) { setError(e); return@addSnapshotListener }
+                mutable.value = mutable.value.copy(stockUsage = snap?.documents?.map { doc ->
+                    StockUsage(doc.id, doc.getString("stockId") ?: "", doc.getString("date") ?: "",
+                        (doc.getLong("quantity") ?: 0L).toInt())
+                } ?: emptyList())
+            }
         listeners += home.collection("activity").orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(40).addSnapshotListener { snapshot, error ->
                 if (error == null && snapshot != null && !snapshot.metadata.isFromCache) {
                     FreeNotifications.process(context, uid, houseId, snapshot.documents)
+                }
+                if (snapshot != null) {
+                    mutable.value = mutable.value.copy(activity = snapshot.documents.map { doc ->
+                        ActivityEntry(doc.id, doc.getString("actorName") ?: "",
+                            doc.getString("title") ?: "", doc.getString("kind") ?: "",
+                            doc.getTimestamp("createdAt")?.toDate()?.time ?: 0L)
+                    })
                 }
             }
         FreeNotifications.schedule(context)
@@ -414,18 +450,29 @@ class CloudStore(
         }.addOnFailureListener(::setError)
     }
     override fun changeStock(item: StockItem, amount: Int) {
-        val ref = home.collection("stock").document(item.id)
-        db.runTransaction { tx ->
-            val doc = tx.get(ref)
-            val current = (doc.getLong("quantity") ?: item.quantity.toLong()).toInt()
-            val next = (current + amount).coerceAtLeast(0)
-            tx.update(ref, mapOf("quantity" to next, "updatedAt" to FieldValue.serverTimestamp()))
-            current to next
-        }.addOnSuccessListener { (before, after) ->
-            if (before > item.minimum && after <= item.minimum) {
-                addMissingStockToShopping(item.name, item.unit)
+        if (amount == 0) return
+        val amountSafe = if (amount < 0) amount.coerceAtLeast(-item.quantity.coerceAtLeast(0)) else amount
+        if (amountSafe == 0) return
+        // Atomic increment is persisted by Firestore offline and replayed on reconnect.
+        // A server-side nonnegative quantity rule rejects conflicting decrements.
+        home.collection("stock").document(item.id).update(mapOf(
+            "quantity" to FieldValue.increment(amountSafe.toLong()),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )).addOnSuccessListener {
+            if (amountSafe < 0) {
+                home.collection("stockUsage").add(mapOf(
+                    "stockId" to item.id, "quantity" to -amountSafe,
+                    "date" to LocalDate.now().toString(),
+                    "createdAt" to FieldValue.serverTimestamp()
+                )).addOnFailureListener(::setError)
+                recordActivity(userName + " hat " + item.name + " verbraucht", "stock")
             }
-        }.addOnFailureListener(::setError)
+            if (item.quantity > item.minimum && item.quantity + amountSafe <= item.minimum)
+                addMissingStockToShopping(item.name, item.unit)
+        }.addOnFailureListener { error ->
+            setError(IllegalStateException("Bestandsänderung nicht übernommen: " +
+                (error.localizedMessage ?: "Konflikt").take(120) + " – erneut versuchen"))
+        }
     }
     override fun deleteStock(item: StockItem) { home.collection("stock").document(item.id).delete().addOnFailureListener(::setError) }
     override fun setBudget(value: Double) {
@@ -466,6 +513,37 @@ class CloudStore(
         db.collection("invites").document(code).update("active", false)
             .addOnSuccessListener { reply("Einladung widerrufen") }
             .addOnFailureListener { reply(it.localizedMessage ?: "Fehler beim Widerruf") }
+    }
+    override fun saveTemplate(name: String, products: List<TemplateProduct>) {
+        if (products.isEmpty()) return
+        home.collection("templates").add(mapOf(
+            "name" to name.take(100), "itemsJson" to V3Logic.itemsToJson(products.take(100)),
+            "createdBy" to uid, "createdAt" to FieldValue.serverTimestamp()
+        )).addOnFailureListener(::setError)
+    }
+    override fun deleteTemplate(template: ShoppingTemplate) {
+        home.collection("templates").document(template.id).delete().addOnFailureListener(::setError)
+    }
+    override fun addReceipt(merchant: String, date: String, total: Double, note: String) {
+        home.collection("receipts").add(mapOf("merchant" to merchant.trim().take(100),
+            "date" to date, "total" to total.coerceAtLeast(0.0),
+            "note" to note.take(300), "createdBy" to uid,
+            "createdAt" to FieldValue.serverTimestamp()
+        )).addOnFailureListener(::setError)
+        recordActivity(userName + " hat eine Ausgabe erfasst", "receipt")
+    }
+    override fun deleteReceipt(item: ReceiptEntry) {
+        home.collection("receipts").document(item.id).delete().addOnFailureListener(::setError)
+    }
+    override fun addRecipe(name: String, portions: Int, ingredients: String) {
+        home.collection("recipes").add(mapOf("name" to name.take(100),
+            "portions" to portions.coerceAtLeast(1),
+            "ingredients" to ingredients.take(3500),
+            "createdBy" to uid, "createdAt" to FieldValue.serverTimestamp()
+        )).addOnFailureListener(::setError)
+    }
+    override fun deleteRecipe(item: RecipeEntry) {
+        home.collection("recipes").document(item.id).delete().addOnFailureListener(::setError)
     }
     override fun createInvite(reply: (String) -> Unit) {
         val chars = "ABCDEF0123456789"
