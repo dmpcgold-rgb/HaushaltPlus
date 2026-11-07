@@ -1,4 +1,4 @@
-# Haushalt+ v0.2 – Android-Familienhaushalt
+# Haushalt+ v0.2.1 – Android-Familienhaushalt
 
 Native Kotlin-/Jetpack-Compose-App mit RAUS0-inspiriertem **dunklem Neon-Design** (Schwarz/Carbon, Orange, Pink, Türkis und Blau). Android-Paketname: `at.familie.haushaltplus`. Quellcode ausschließlich im Gold-Repository `dmpcgold-rgb/HaushaltPlus`.
 
@@ -14,6 +14,21 @@ Native Kotlin-/Jetpack-Compose-App mit RAUS0-inspiriertem **dunklem Neon-Design*
 8. **Barcode-Scanner:** Google Code Scanner (Google Play Services, keine Kamera-Appberechtigung) und einzelne, vom Nutzer ausgelöste Produktnamensabfragen bei Open Food Facts. Offline/bei unbekannten Produkten bleibt der Code als bearbeitbarer Name stehen.
 9. **Essensplan:** Mahlzeiten für die kommenden sieben Tage; Zutaten aus kommagetrennten Rezeptlisten auf die Einkaufsliste übernehmen.
 10. **Daten und Kontosicherheit:** JSON-Export über Android-Dateiauswahl, bestätigter Import fehlender Einträge, Passwort-Zurücksetzen per E-Mail, Konto-Löschung für Nicht-Besitzer nach Reauthentifizierung; Besitzer übertragen vorher die Verwaltung.
+
+## Neu in v0.2.1
+
+- Shoppingliste als Text teilen (z. B. über Messenger), ohne anderen Apps direkten Cloud-Zugriff zu geben.
+- Erledigte Artikel über das Optionsmenü erneut auf die Liste setzen, ohne den ursprünglichen Einkauf aus der Monatsstatistik zu löschen.
+- Aufgaben nach **Offen**, **Heute**, **Meine** und **Alle** filtern; weniger störende Aktionssymbole in der Liste.
+- Bessere Auth-Profilinitialisierung und Bereinigung der gespeicherten Haushalts-ID beim Kontowechsel.
+- Android erinnert auch nach nachträglich erteilter Benachrichtigungsberechtigung an fällige Aufgaben.
+- Die Berechtigung für Handy-Benachrichtigungen wird erst im Einstellungsbereich angefragt, nicht beim ersten Start.
+- Hintergrundabfragen laden nach der ersten Synchronisierung nur **neue** Aktivitäten nach und prüfen fällige Aufgaben höchstens einmal pro Tag. Das reduziert Firestore-Lesevorgänge im Spark-Tarif.
+- Budget zeigt Ausgaben nach Kategorie und macht Artikel ohne Preis transparent.
+- JSON-Export meldet Fehler, wenn der gewählte Speicherort nicht beschreibbar ist, und begrenzt zu große Importdateien.
+- Niedrige Vorräte werden auch beim Erstellen oder manuellen Bearbeiten auf die Einkaufsliste gesetzt, sofern nicht schon ein offener Eintrag vorhanden ist.
+
+Bekannte Grenzen: Firestore lässt in dieser Version Änderungen offline in der Regel vormerken; **Vorratsänderungen, die eine Cloud-Transaktion benötigen**, können offline fehlschlagen. Hintergrundmeldungen sind keine garantierten sofortigen Push-Nachrichten. Ein praxistauglicher signierter Release-Schlüssel wird gesondert benötigt.
 
 ## Kostenloser Spark-Tarif
 
