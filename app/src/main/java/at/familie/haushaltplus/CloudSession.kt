@@ -346,8 +346,14 @@ class CloudStore(
             "updatedAt" to FieldValue.serverTimestamp()
         )).addOnFailureListener(::setError)
     }
+    private val taskChangesInFlight = mutableSetOf<String>()
+
     override fun setTaskDone(item: HouseholdTask, done: Boolean) {
-        if (item.done == done) return // Avoid repeated writes and repeated recurring copies.
+        if (item.done == done) return
+        // Debounce same task across rapid taps until Firebase acknowledges the change.
+        synchronized(taskChangesInFlight) {
+            if (!taskChangesInFlight.add(item.id)) return
+        }
         val ref = home.collection("tasks").document(item.id)
         val update = mapOf(
             "done" to done, "doneBy" to if (done) uid else "",
@@ -355,35 +361,35 @@ class CloudStore(
             "updatedAt" to FieldValue.serverTimestamp(),
             "completedAt" to if (done) FieldValue.serverTimestamp() else FieldValue.delete()
         )
-        if (done && item.repeat in setOf("Täglich", "Wöchentlich", "Monatlich")) {
-            val due = runCatching { LocalDate.parse(item.due) }.getOrDefault(LocalDate.now())
-            val base = if (due.isBefore(LocalDate.now())) LocalDate.now() else due
-            val next = when (item.repeat) {
-                "Täglich" -> base.plusDays(1)
-                "Wöchentlich" -> base.plusWeeks(1)
-                else -> base.plusMonths(1)
-            }.toString()
+        val followUp = if (done) TaskPlanner.nextDue(item.due, item.repeat) else null
+        val operation = if (followUp != null) {
             val batch = db.batch()
             batch.update(ref, update)
-            val nextId = item.id + "--next-" + next
-            val names = mutable.value.members.map { it.name }
-            val nextAssignee = if (item.rotate && names.isNotEmpty()) {
-                names[((names.indexOf(item.assignee).takeIf { it >= 0 } ?: -1) + 1) % names.size]
-            } else item.assignee
+            val nextId = item.id + "--next-" + followUp
+            val assignee = TaskPlanner.nextAssignee(
+                item.assignee, item.rotate, mutable.value.members.map { it.name }
+            )
             batch.set(home.collection("tasks").document(nextId), mapOf(
-                "title" to item.title, "assignee" to nextAssignee, "due" to next,
+                "title" to item.title, "assignee" to assignee, "due" to followUp,
                 "repeat" to item.repeat, "rotate" to item.rotate, "done" to false,
-                "doneBy" to "", "doneByName" to "",
-                "createdBy" to uid, "createdAt" to FieldValue.serverTimestamp()
+                "doneBy" to "", "doneByName" to "", "createdBy" to uid,
+                "createdAt" to FieldValue.serverTimestamp()
             ))
-            batch.commit().addOnSuccessListener {
-                recordActivity(userName + " hat die Aufgabe " + item.title + " erledigt", "tasks")
-            }.addOnFailureListener(::setError)
+            batch.commit()
         } else {
-            ref.update(update).addOnSuccessListener {
-                recordActivity(userName + if (done) " hat die Aufgabe " + item.title + " erledigt"
-                    else " hat die Aufgabe " + item.title + " wieder geöffnet", "tasks")
-            }.addOnFailureListener(::setError)
+            ref.update(update)
+        }
+        operation.addOnCompleteListener { task ->
+            synchronized(taskChangesInFlight) { taskChangesInFlight.remove(item.id) }
+            if (task.isSuccessful) {
+                recordActivity(
+                    userName + if (done) " hat die Aufgabe " + item.title + " erledigt"
+                    else " hat die Aufgabe " + item.title + " wieder geöffnet",
+                    "tasks"
+                )
+            } else {
+                task.exception?.let(::setError)
+            }
         }
     }
     override fun deleteTask(item: HouseholdTask) { home.collection("tasks").document(item.id).delete().addOnFailureListener(::setError) }

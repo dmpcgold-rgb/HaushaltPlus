@@ -144,27 +144,23 @@ class LocalStore(private val context: Context) : HouseholdStore {
     override fun updateTask(task: HouseholdTask) =
         mutate { h -> h.copy(tasks = h.tasks.map { if (it.id == task.id) task else it }) }
     override fun setTaskDone(item: HouseholdTask, done: Boolean) = mutate { h ->
-        val updated = h.tasks.map {
-            if(it.id == item.id) it.copy(done = done, doneBy = if(done) "local" else "",
-                doneByName = if(done) "Ich" else "") else it
-        }
-        val next = if(done && !item.done && item.repeat != "Nie") try {
-            val due = item.due.takeIf { it.isNotBlank() }?.let(LocalDate::parse) ?: LocalDate.now()
-            val base = maxOf(due, LocalDate.now())
-            val future = when(item.repeat) {
-                "Täglich" -> base.plusDays(1)
-                "Wöchentlich" -> base.plusWeeks(1)
-                "Monatlich" -> base.plusMonths(1)
-                else -> base
+        // Use the current persisted task, not a possibly stale checkbox callback.
+        val current = h.tasks.firstOrNull { it.id == item.id }
+        if (current == null || current.done == done) {
+            h
+        } else {
+            val updated = h.tasks.map {
+                if (it.id == current.id) it.copy(done = done, doneBy = if (done) "local" else "",
+                    doneByName = if (done) "Ich" else "") else it
             }
-            val names = h.members.map { it.name }
-            val nextAssignee = if (item.rotate && names.isNotEmpty()) {
-                names[(names.indexOf(item.assignee).takeIf { it >= 0 } ?: -1).plus(1).rem(names.size)]
-            } else item.assignee
-            listOf(item.copy(id = id(), due = future.toString(), assignee = nextAssignee,
-                done = false, doneBy = "", doneByName = ""))
-        } catch (_: Exception) { emptyList() } else emptyList()
-        h.copy(tasks = updated + next)
+            val due = if (done) TaskPlanner.nextDue(current.due, current.repeat) else null
+            val next = if (due != null) {
+                listOf(current.copy(id = id(), due = due,
+                    assignee = TaskPlanner.nextAssignee(current.assignee, current.rotate, h.members.map { it.name }),
+                    done = false, doneBy = "", doneByName = ""))
+            } else emptyList()
+            h.copy(tasks = updated + next)
+        }
     }
     override fun deleteTask(item: HouseholdTask) =
         mutate { it.copy(tasks = it.tasks.filterNot { t -> t.id == item.id }) }

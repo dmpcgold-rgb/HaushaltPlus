@@ -59,8 +59,8 @@ jobs:
               raise SystemExit("Firebase-Projekt-ID oder Android-Paketname stimmt nicht.")
           print("Firebase-Projekt und Android-Paketname überprüft.")
           PY
-      - name: Build Firebase-enabled debug APK
-        run: gradle --no-daemon :app:assembleDebug
+      - name: Run unit tests and build Firebase-enabled debug APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleDebug
       - name: Upload Firebase APK
         uses: actions/upload-artifact@v4
         with:
