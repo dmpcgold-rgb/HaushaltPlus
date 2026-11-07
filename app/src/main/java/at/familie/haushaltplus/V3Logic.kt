@@ -19,6 +19,37 @@ object V3Logic {
         } }.filter { it.name.isNotBlank() }
     }.getOrDefault(emptyList())
 
+    /**
+     * Local, deterministic parsing after Android's on-device/system speech recognizer.
+     * Confirmation in the UI is required before writing anything to the household.
+     */
+    fun voiceItems(spoken: String): List<TemplateProduct> {
+        val words = mapOf("ein" to "1", "eine" to "1", "einen" to "1",
+            "zwei" to "2", "drei" to "3", "vier" to "4", "fünf" to "5", "sechs" to "6",
+            "sieben" to "7", "acht" to "8", "neun" to "9", "zehn" to "10")
+        val units = mapOf("liter" to "l", "l" to "l", "kilo" to "kg", "kilogramm" to "kg",
+            "kg" to "kg", "gramm" to "g", "g" to "g", "stück" to "Stk",
+            "packung" to "Pkg", "packungen" to "Pkg", "flaschen" to "Fl",
+            "flasche" to "Fl")
+        return spoken.split(Regex("(?i)\\s*(?:,|\\bund\\b)\\s*"))
+            .mapNotNull { part ->
+                val tokens = part.trim().replace(Regex("(?i)\\b(hinzufügen|kaufen|bitte)\\b"), "")
+                    .trim().split(Regex("\\s+"))
+                if (tokens.isEmpty() || tokens[0].isBlank()) return@mapNotNull null
+                val first = tokens[0].lowercase(java.util.Locale.GERMAN)
+                val qty = first.toDoubleOrNull()?.toString()?.removeSuffix(".0")
+                    ?: words[first]
+                val idx = if (qty == null) 0 else 1
+                val unit = tokens.getOrNull(idx)?.lowercase(java.util.Locale.GERMAN)
+                val namedUnit = units[unit]
+                val name = tokens.drop(idx + if (namedUnit == null) 0 else 1)
+                    .joinToString(" ").trim().take(100)
+                if (name.isBlank()) null else TemplateProduct(
+                    name = name.replaceFirstChar { it.uppercase() },
+                    quantity = qty ?: "1", unit = namedUnit ?: "Stk")
+            }.take(25)
+    }
+
     /** Ingredient lines are '2|kg|Kartoffeln' or 'Kartoffeln' (one per line). */
     fun recipeItems(ingredients: String, portions: Int, desired: Int): List<TemplateProduct> =
         ingredients.lines().filter { it.isNotBlank() }.mapNotNull { line ->
