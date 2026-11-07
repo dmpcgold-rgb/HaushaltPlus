@@ -358,6 +358,7 @@ private fun DashboardSettingsScreen() {
     val prefs = remember { context.getSharedPreferences("haushalt_v3_ui", Context.MODE_PRIVATE) }
     var order by remember { mutableStateOf(DashboardOptions.read(context)) }
     var version by remember { mutableIntStateOf(0) }
+    var reduceMotion by remember { mutableStateOf(prefs.getBoolean("reduce_motion", false)) }
     SectionHeader("Startseite gestalten", "Kacheln ein- und ausblenden oder in der Reihenfolge verschieben")
     order.forEachIndexed { index, key ->
         val enabled = prefs.getBoolean("dashboard_" + key, true)
@@ -378,6 +379,17 @@ private fun DashboardSettingsScreen() {
                 }) { Icon(Icons.Default.KeyboardArrowDown, "Nach unten") }
             }
         }
+    }
+    HorizontalDivider()
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Weniger Animationen & Vibrationen", fontWeight = FontWeight.Bold)
+            Text("Für ruhigere Bedienung", color = Grey, style = MaterialTheme.typography.bodySmall)
+        }
+        Switch(checked = reduceMotion, onCheckedChange = {
+            reduceMotion = it
+            prefs.edit().putBoolean("reduce_motion", it).apply()
+        })
     }
     Text("Änderungen erscheinen beim nächsten Öffnen der Startseite auf diesem Gerät.",
         color = Grey, style = MaterialTheme.typography.bodySmall)

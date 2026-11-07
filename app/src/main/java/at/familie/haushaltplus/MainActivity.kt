@@ -72,6 +72,18 @@ class MainActivity : ComponentActivity() {
                 background = Canvas, onBackground = Ink,
                 surfaceVariant = Color(0xFF292A35), onSurfaceVariant = Ink,
                 outline = Color(0xFF6D5864), error = AccentPink
+            ), shapes = Shapes(
+                extraSmall = RoundedCornerShape(8.dp),
+                small = RoundedCornerShape(12.dp),
+                medium = RoundedCornerShape(18.dp),
+                large = RoundedCornerShape(22.dp),
+                extraLarge = RoundedCornerShape(28.dp)
+            ), typography = Typography(
+                headlineLarge = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.ExtraBold),
+                headlineMedium = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                titleLarge = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                titleMedium = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                bodyMedium = MaterialTheme.typography.bodyMedium
             )) {
                 if (cloud == null) HouseholdScreen(local, null, requestedTab)
                 else {
@@ -237,6 +249,7 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?, reque
             NavigationBar(containerColor = Panel) {
                 pages.forEachIndexed { idx, title ->
                     NavigationBarItem(selected = selected == idx, onClick = { selected = idx },
+                        alwaysShowLabel = false,
                         icon = { Icon(when(idx) { 0 -> Icons.Default.Home; 1 -> Icons.Default.ShoppingCart; 2 -> Icons.Default.CheckCircle; 3 -> Icons.Default.Inventory2; else -> Icons.Default.MoreHoriz }, title) },
                         label = { Text(title) },
                         colors = NavigationBarItemDefaults.colors(selectedIconColor = Mint, selectedTextColor = Mint,
@@ -782,11 +795,17 @@ private fun StockPage(data: HouseholdData, store: HouseholdStore, modifier: Modi
         }
         if (sorted.isEmpty()) item { EmptyMessage("Noch keine Vorräte", "Mit + legst du den ersten Vorrat an.") }
         items(sorted, key = { it.id }) { stock ->
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp)) {
+            ElevatedCard(Modifier.fillMaxWidth().animateContentSize(),
+                shape = RoundedCornerShape(17.dp)) {
+                Column(Modifier.padding(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(stock.name, fontWeight = FontWeight.SemiBold)
+                            val days = V3Logic.daysRemaining(stock, data.stockUsage)
+                            if (days != null) Text("Geschätzter Vorrat: " + days +
+                                if(days == 1) " Tag" else " Tage",
+                                color = if (days <= 4) AccentPink else AccentTeal,
+                                style = MaterialTheme.typography.labelSmall)
                             Text("Minimum: ${stock.minimum} ${stock.unit}", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                         }
                         if (stock.quantity <= stock.minimum) Text("Nachkaufen", color = Color(0xFFB64029), style = MaterialTheme.typography.labelMedium)

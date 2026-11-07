@@ -253,7 +253,7 @@ class CloudStore(
         listeners += home.collection("stock").addSnapshotListener { snap, e ->
             if (e != null) { setError(e); return@addSnapshotListener }
             mutable.value = mutable.value.copy(stock = snap?.documents?.map { doc ->
-                StockItem(doc.id, doc.getString("name") ?: "", (doc.getLong("quantity") ?: 0).toInt(),
+                StockItem(doc.id, doc.getString("name") ?: "", (doc.getLong("quantity") ?: 0).toInt().coerceAtLeast(0),
                     (doc.getLong("minimum") ?: 1).toInt(), doc.getString("unit") ?: "Stk")
             } ?: emptyList())
         }
