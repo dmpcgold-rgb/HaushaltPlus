@@ -16,7 +16,7 @@ data class HouseholdTask(
 )
 data class StockItem(
     val id: String = "", val name: String = "", val quantity: Int = 0,
-    val minimum: Int = 1, val unit: String = "Stk"
+    val minimum: Int = 1, val unit: String = "Stk", val expiresOn: String = ""
 )
 data class MealEntry(
     val id: String = "", val date: String = "", val slot: String = "Abendessen",
@@ -35,6 +35,13 @@ data class StockUsage(val id: String = "", val stockId: String = "",
 data class ActivityEntry(val id: String = "", val actor: String = "", val title: String = "",
     val kind: String = "", val createdAt: Long = 0L)
 
+data class PriceEntry(val id: String = "", val product: String = "", val shop: String = "",
+    val unitPrice: Double = 0.0, val unit: String = "Stk", val date: String = "")
+data class ChecklistTemplate(val id: String = "", val name: String = "",
+    val tasks: List<String> = emptyList())
+data class TrashEntry(val id: String = "", val type: String = "", val label: String = "",
+    val payload: String = "", val deletedAt: Long = 0L)
+
 data class Member(val uid: String = "", val name: String = "")
 data class HouseholdData(
     val id: String = "", val name: String = "Mein Haushalt", val ownName: String = "Ich",
@@ -48,7 +55,12 @@ data class HouseholdData(
     val templates: List<ShoppingTemplate> = emptyList(), val receipts: List<ReceiptEntry> = emptyList(),
     val recipes: List<RecipeEntry> = emptyList(), val stockUsage: List<StockUsage> = emptyList(),
     val activity: List<ActivityEntry> = emptyList(),
-    val stockRetryAvailable: Boolean = false
+    val stockRetryAvailable: Boolean = false,
+    val prices: List<PriceEntry> = emptyList(),
+    val checklists: List<ChecklistTemplate> = emptyList(),
+    val trash: List<TrashEntry> = emptyList(),
+    val lastSyncedAt: Long = 0L,
+    val pendingWrites: Boolean = false
 )
 
 interface HouseholdStore {
@@ -81,6 +93,12 @@ interface HouseholdStore {
     fun deleteReceipt(item: ReceiptEntry)
     fun addRecipe(name: String, portions: Int, ingredients: String)
     fun deleteRecipe(item: RecipeEntry)
+    fun addPrice(product: String, shop: String, unitPrice: Double, unit: String, date: String)
+    fun deletePrice(item: PriceEntry)
+    fun saveChecklist(name: String, titles: List<String>)
+    fun deleteChecklist(item: ChecklistTemplate)
+    fun restoreTrash(item: TrashEntry)
+    fun purgeTrash(item: TrashEntry)
     fun createInvite(reply: (String) -> Unit)
     fun close() {}
 }
