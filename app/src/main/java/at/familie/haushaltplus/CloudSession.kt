@@ -31,6 +31,7 @@ class CloudSession(private val context: Context) {
     private var activeStore: CloudStore? = null
     private var displayName: String = "Ich"
     private var trackedUid: String? = null
+    private var lastUnavailableHomeId: String? = null
 
     init {
         auth.addAuthStateListener { firebaseAuth ->
@@ -77,18 +78,29 @@ class CloudSession(private val context: Context) {
                         mutable.value = CloudState(signedIn = true, needsHousehold = true, busy = false)
                     } else if (activeStore?.houseId != houseId) {
                         activeStore?.close()
-                        db.collection("households").document(houseId).collection("members").document(uid).get()
+                        db.collection("households").document(houseId).collection("members").document(uid)
+                            .get(com.google.firebase.firestore.Source.SERVER)
                             .addOnSuccessListener { member ->
                                 if (member.exists()) {
+                                    lastUnavailableHomeId = null
                                     activeStore = CloudStore(context, db, uid, displayName, houseId)
                                     mutable.value = CloudState(signedIn = true, store = activeStore, busy = false)
                                 } else {
-                                    db.collection("users").document(uid).collection("homes").document(houseId).delete()
-                                    mutable.value = CloudState(signedIn = true, needsHousehold = true, busy = false)
+                                    lastUnavailableHomeId = houseId
+                                    mutable.value = CloudState(signedIn = true, needsHousehold = true,
+                                        busy = false, error = "Kein Zugriff auf den gespeicherten Haushalt")
                                 }
-                            }.addOnFailureListener {
-                                db.collection("users").document(uid).collection("homes").document(houseId).delete()
-                                mutable.value = CloudState(signedIn = true, needsHousehold = true, busy = false)
+                            }.addOnFailureListener { problem ->
+                                // Never delete a household bookmark because of temporary offline errors.
+                                if (problem is com.google.firebase.firestore.FirebaseFirestoreException &&
+                                    problem.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                                    lastUnavailableHomeId = houseId
+                                    mutable.value = CloudState(signedIn = true, needsHousehold = true,
+                                        busy = false, error = "Kein Zugriff auf den gespeicherten Haushalt")
+                                } else {
+                                    activeStore = CloudStore(context, db, uid, displayName, houseId)
+                                    mutable.value = CloudState(signedIn = true, store = activeStore, busy = false)
+                                }
                             }
                     }
                 }
@@ -127,6 +139,15 @@ class CloudSession(private val context: Context) {
                         .set(mapOf("name" to "Familienhaushalt")).addOnFailureListener(::fail)
                 }.addOnFailureListener(::fail)
         }.addOnFailureListener(::fail)
+    }
+    fun unlinkUnavailableHome() {
+        val uid = auth.currentUser?.uid ?: return
+        val homeId = lastUnavailableHomeId ?: return
+        db.collection("users").document(uid).collection("homes").document(homeId).delete()
+            .addOnSuccessListener {
+                lastUnavailableHomeId = null
+                findHome(uid)
+            }.addOnFailureListener(::fail)
     }
     fun resetPassword(email: String, reply: (String) -> Unit) {
         if (email.trim().isEmpty()) { reply("Bitte E-Mail-Adresse eingeben"); return }
