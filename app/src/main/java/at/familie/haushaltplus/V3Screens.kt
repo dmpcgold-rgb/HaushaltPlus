@@ -207,9 +207,14 @@ private fun ReceiptScreen(data: HouseholdData, store: HouseholdStore) {
 private fun RecipeScreen(data: HouseholdData, store: HouseholdStore) {
     var add by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<RecipeEntry?>(null) }
+    var multi by remember { mutableStateOf(false) }
     SectionHeader("Rezeptbuch", "Portionen berechnen und Zutaten übertragen")
     Button(onClick = { add = true }, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Default.Add, null); Text(" Rezept speichern")
+    }
+    if (data.recipes.isNotEmpty()) OutlinedButton(onClick = { multi = true },
+        modifier = Modifier.fillMaxWidth()) {
+        Icon(Icons.Default.RestaurantMenu, "Gerichte kombinieren"); Text(" Mehrere Gerichte planen")
     }
     if (data.recipes.isEmpty()) Text("Speichere ein Rezept mit Zutaten pro Portion.", color = Grey)
     data.recipes.forEach { recipe ->
@@ -226,6 +231,39 @@ private fun RecipeScreen(data: HouseholdData, store: HouseholdStore) {
                 IconButton(onClick = { store.deleteRecipe(recipe) }) { Icon(Icons.Default.DeleteOutline, "Löschen") }
             }
         }
+    }
+    if (multi) {
+        var selectedRecipes by remember { mutableStateOf(setOf<String>()) }
+        var portions by remember { mutableStateOf("2") }
+        val plans = data.recipes.filter { it.id in selectedRecipes }
+            .map { it to (portions.toIntOrNull() ?: 2) }
+        val needed = V3Logic.missingIngredients(plans, data.stock)
+        AlertDialog(onDismissRequest = { multi = false },
+            title = { Text("Wochenmenü zusammenstellen") },
+            text = { Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Mehrere Gerichte wählen und vorhandene Vorräte anrechnen.", color = Grey)
+                OutlinedTextField(portions, { portions = it },
+                    label = { Text("Portionen pro Gericht") }, singleLine = true)
+                data.recipes.forEach { recipe ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = recipe.id in selectedRecipes, onCheckedChange = { chosen ->
+                            selectedRecipes = if (chosen) selectedRecipes + recipe.id else selectedRecipes - recipe.id
+                        })
+                        Text(recipe.name, modifier = Modifier.weight(1f))
+                    }
+                }
+                HorizontalDivider()
+                Text("Noch einkaufen:", fontWeight = FontWeight.Bold)
+                if (needed.isEmpty()) Text("Alle Zutaten vorhanden oder keine Gerichte gewählt.", color = Grey)
+                needed.forEach { item -> Text(item.quantity + " " + item.unit + " " + item.name) }
+            } },
+            confirmButton = { TextButton(enabled = needed.isNotEmpty() &&
+                (portions.toIntOrNull() ?: 0) in 1..100, onClick = {
+                needed.forEach { store.addShopping(it.name, it.quantity, it.unit, it.category, 0.0) }
+                multi = false
+            }) { Text("Fehlendes einkaufen") } },
+            dismissButton = { TextButton(onClick = { multi = false }) { Text("Abbrechen") } })
     }
     if(add) {
         var name by remember { mutableStateOf("") }
