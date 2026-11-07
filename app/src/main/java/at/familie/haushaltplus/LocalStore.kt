@@ -20,7 +20,7 @@ class LocalStore(private val context: Context) : HouseholdStore {
         return try {
             val raw = prefs.getString("data", null) ?: return HouseholdData(
                 id = "local", name = "Unser Zuhause", ownName = "Ich",
-                members = listOf(Member("local", "Ich"))
+                members = listOf(Member("local", "Ich")), ownUid = "local"
             )
             val root = JSONObject(raw)
             fun <T> list(key: String, convert: (JSONObject) -> T): List<T> {
@@ -181,6 +181,7 @@ class LocalStore(private val context: Context) : HouseholdStore {
     override fun deleteMeal(item: MealEntry) =
         mutate { it.copy(meals = it.meals.filterNot { m -> m.id == item.id }) }
     override fun removeMember(uid: String) {}
+    override fun transferOwnership(uid: String, reply: (String) -> Unit) = reply("Nur mit Cloud-Konto möglich")
     override fun revokeInvite(code: String, reply: (String) -> Unit) = reply("Nur mit Cloud-Konto möglich")
     override fun createInvite(reply: (String) -> Unit) = reply("Freigabe ist nur mit Cloud-Anmeldung möglich")
 

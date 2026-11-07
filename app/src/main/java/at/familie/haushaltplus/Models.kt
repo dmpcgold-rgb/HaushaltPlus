@@ -30,7 +30,7 @@ data class HouseholdData(
     val stock: List<StockItem> = emptyList(), val cloud: Boolean = false,
     val loading: Boolean = false, val error: String = "",
     val meals: List<MealEntry> = emptyList(), val monthlyBudget: Double = 0.0,
-    val ownerUid: String = "", val syncStatus: String = "Lokal"
+    val ownerUid: String = "", val syncStatus: String = "Lokal", val ownUid: String = ""
 )
 
 interface HouseholdStore {
@@ -53,6 +53,7 @@ interface HouseholdStore {
     fun addMeal(date: String, slot: String, title: String, ingredients: String)
     fun deleteMeal(item: MealEntry)
     fun removeMember(uid: String)
+    fun transferOwnership(uid: String, reply: (String) -> Unit)
     fun revokeInvite(code: String, reply: (String) -> Unit)
     fun createInvite(reply: (String) -> Unit)
     fun close() {}

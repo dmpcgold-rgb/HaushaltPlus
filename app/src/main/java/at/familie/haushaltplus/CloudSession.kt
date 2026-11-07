@@ -165,7 +165,7 @@ class CloudStore(
     private val userName: String, val houseId: String
 ) : HouseholdStore {
     private val home = db.collection("households").document(houseId)
-    private val mutable = MutableStateFlow(HouseholdData(id = houseId, ownName = userName, cloud = true, loading = true))
+    private val mutable = MutableStateFlow(HouseholdData(id = houseId, ownName = userName, ownUid = uid, cloud = true, loading = true))
     override val data: StateFlow<HouseholdData> = mutable
     private val listeners = mutableListOf<ListenerRegistration>()
     private fun setError(e: Exception) { mutable.value = mutable.value.copy(error = e.localizedMessage ?: "Speichern fehlgeschlagen") }
@@ -390,6 +390,16 @@ class CloudStore(
         home.collection("members").document(memberUid).delete().addOnSuccessListener {
             recordActivity(userName + " hat ein Mitglied entfernt", "family")
         }.addOnFailureListener(::setError)
+    }
+    override fun transferOwnership(newOwnerUid: String, reply: (String) -> Unit) {
+        if (mutable.value.ownerUid != uid) return reply("Nur die Haushaltsverwaltung darf übertragen")
+        if (newOwnerUid == uid || mutable.value.members.none { it.uid == newOwnerUid }) {
+            reply("Neue Verwaltung muss bereits Haushaltsmitglied sein")
+            return
+        }
+        home.update("ownerUid", newOwnerUid)
+            .addOnSuccessListener { reply("Verwaltung übertragen") }
+            .addOnFailureListener { reply(it.localizedMessage ?: "Übertragung fehlgeschlagen") }
     }
     override fun revokeInvite(code: String, reply: (String) -> Unit) {
         if (mutable.value.ownerUid != uid) return reply("Nur die Haushaltsverwaltung darf Einladungen widerrufen")
