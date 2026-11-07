@@ -67,13 +67,27 @@ class MainActivity : ComponentActivity() {
         if (!BuildConfig.FIREBASE_ENABLED) FreeNotifications.scheduleLocal(this)
         val cloud = if (BuildConfig.FIREBASE_ENABLED) CloudSession(this) else null
         setContent {
+            val themePrefs = remember {
+                getSharedPreferences("haushalt_v4_theme", Context.MODE_PRIVATE)
+            }
+            val highContrast = remember { themePrefs.getBoolean("high_contrast", false) }
+            val primaryColor = remember {
+                when(themePrefs.getString("accent", "Orange")) {
+                    "Pink" -> AccentPink
+                    "Türkis" -> AccentTeal
+                    "Blau" -> AccentBlue
+                    else -> Mint
+                }
+            }
             MaterialTheme(colorScheme = darkColorScheme(
-                primary = Mint, onPrimary = Color(0xFF1D0E04),
+                primary = primaryColor, onPrimary = Color(0xFF160E0A),
                 secondary = AccentPink, tertiary = AccentTeal,
-                surface = Panel, onSurface = Ink,
-                background = Canvas, onBackground = Ink,
-                surfaceVariant = Color(0xFF292A35), onSurfaceVariant = Ink,
-                outline = Color(0xFF6D5864), error = AccentPink
+                surface = if (highContrast) Color(0xFF090909) else Panel, onSurface = Color.White,
+                background = if (highContrast) Color.Black else Canvas, onBackground = Color.White,
+                surfaceVariant = if (highContrast) Color(0xFF1B1B1B) else Color(0xFF292A35),
+                onSurfaceVariant = Color.White,
+                outline = if(highContrast) Color(0xFFB7B7B7) else Color(0xFF75606C),
+                error = AccentPink
             ), shapes = Shapes(
                 extraSmall = RoundedCornerShape(8.dp),
                 small = RoundedCornerShape(12.dp),
@@ -369,8 +383,11 @@ private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJ
         .sortedBy { it.due }
     val month = java.time.YearMonth.now().toString()
     val spent = data.receipts.filter { it.date.startsWith(month) }.sumOf { it.total }
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 10.dp, 16.dp, 100.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val compact = context.getSharedPreferences("haushalt_v4_theme", Context.MODE_PRIVATE)
+        .getBoolean("compact", false)
+    LazyColumn(modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp, 10.dp, 16.dp, 100.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 10.dp)) {
         item {
             Box(Modifier.fillMaxWidth().background(
                 brush = Brush.linearGradient(listOf(Color(0xFF63200A), Color(0xFF401B40), Color(0xFF142244))),

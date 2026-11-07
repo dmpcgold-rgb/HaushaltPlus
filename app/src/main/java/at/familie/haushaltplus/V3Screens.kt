@@ -6,6 +6,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.roundToInt
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -408,6 +411,28 @@ private fun DashboardSettingsScreen() {
         val enabled = enabledCards[key] ?: true
         ElevatedCard(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.DragHandle, "Lange drücken und ziehen: " +
+                    (DashboardOptions.labels[key] ?: key), modifier = Modifier
+                        .size(48.dp).padding(8.dp).pointerInput(key, index, order) {
+                            var total = 0f
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { total = 0f },
+                                onDragEnd = {
+                                    val step = (total / 64.dp.toPx()).roundToInt()
+                                    val newIndex = (index + step).coerceIn(0, order.lastIndex)
+                                    if (newIndex != index) {
+                                        order = order.toMutableList().also { list ->
+                                            list.add(newIndex, list.removeAt(index))
+                                        }
+                                        prefs.edit().putString("dashboard_order", order.joinToString(",")).apply()
+                                    }
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    total += dragAmount.y
+                                }
+                            )
+                        })
                 Checkbox(checked = enabled, onCheckedChange = {
                     enabledCards = enabledCards + (key to it)
                     prefs.edit().putBoolean("dashboard_" + key, it).apply()
