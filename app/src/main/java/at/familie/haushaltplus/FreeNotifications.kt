@@ -73,17 +73,18 @@ object FreeNotifications {
                 .forEach { doc ->
                     val key = "due_" + uid + "_" + homeId + "_" + today + "_" + doc.id
                     if (!prefs.getBoolean(key, false)) {
-                        prefs.edit().putBoolean(key, true).apply()
-                        show(context, "Heute fällig: " + (doc.getString("title") ?: "Haushaltsaufgabe"))
+                        val shown = show(context, "Heute fällig: " + (doc.getString("title") ?: "Haushaltsaufgabe"))
+                        // Keep reminders eligible if Android notification permission is missing.
+                        if (shown) prefs.edit().putBoolean(key, true).apply()
                     }
                 }
         }
     }
 
-    private fun show(context: Context, description: String) {
+    private fun show(context: Context, description: String): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) return
+        ) return false
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= 26) {
             manager.createNotificationChannel(NotificationChannel(
@@ -102,6 +103,7 @@ object FreeNotifications {
             .setContentIntent(pending)
             .build()
         manager.notify((System.nanoTime() and 0x7fffffff).toInt(), notification)
+        return true
     }
 }
 
@@ -109,8 +111,9 @@ class FreeNotificationWorker(context: Context, parameters: WorkerParameters) : C
     override suspend fun doWork(): Result {
         if (!BuildConfig.FIREBASE_ENABLED) return Result.success()
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return Result.success()
-        val homeId = applicationContext.getSharedPreferences("haushalt_cloud", Context.MODE_PRIVATE)
-            .getString("homeId", null) ?: return Result.success()
+        val prefs = applicationContext.getSharedPreferences("haushalt_cloud", Context.MODE_PRIVATE)
+        if (prefs.getString("homeUid", null) != uid) return Result.success()
+        val homeId = prefs.getString("homeId", null) ?: return Result.success()
         return try {
             val docs = FirebaseFirestore.getInstance().collection("households").document(homeId)
                 .collection("activity")

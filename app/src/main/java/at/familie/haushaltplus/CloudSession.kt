@@ -3,6 +3,7 @@ package at.familie.haushaltplus
 import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.EmailAuthProvider
+import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.ListenerRegistration
@@ -40,6 +41,9 @@ class CloudSession(private val context: Context) {
                 homeWatch?.remove(); homeWatch = null
                 activeStore?.close(); activeStore = null
                 trackedUid = null
+                displayName = "Ich"
+                context.getSharedPreferences("haushalt_cloud", Context.MODE_PRIVATE).edit()
+                    .remove("homeId").remove("homeUid").apply()
                 mutable.value = CloudState(busy = false)
             } else if (user.uid != trackedUid) {
                 trackedUid = user.uid
@@ -58,16 +62,24 @@ class CloudSession(private val context: Context) {
         if (name.trim().isBlank()) { fail(IllegalArgumentException("Bitte Namen eingeben")); return }
         displayName = name.trim()
         mutable.value = mutable.value.copy(busy = true, error = "")
-        auth.createUserWithEmailAndPassword(email.trim(), password).addOnSuccessListener {
-            val uid = it.user?.uid ?: return@addOnSuccessListener
+        auth.createUserWithEmailAndPassword(email.trim(), password).addOnSuccessListener { result ->
+            val user = result.user ?: return@addOnSuccessListener
             displayName = name.trim()
-            db.collection("users").document(uid).set(mapOf("displayName" to displayName))
+            // Save the name in both Auth and the Firestore profile. A fast auth-state
+            // listener may initialize home discovery before either write completes.
+            user.updateProfile(UserProfileChangeRequest.Builder().setDisplayName(displayName).build())
+                .addOnFailureListener(::fail)
+            db.collection("users").document(user.uid)
+                .set(mapOf("displayName" to displayName))
+                .addOnFailureListener(::fail)
         }.addOnFailureListener(::fail)
     }
     private fun findHome(uid: String) {
         mutable.value = CloudState(signedIn = true, busy = true)
         db.collection("users").document(uid).get().addOnSuccessListener {
-            displayName = it.getString("displayName")?.takeIf(String::isNotBlank) ?: displayName
+            displayName = it.getString("displayName")?.takeIf(String::isNotBlank)
+                ?: auth.currentUser?.displayName?.takeIf(String::isNotBlank)
+                ?: displayName
             homeWatch?.remove()
             homeWatch = db.collection("users").document(uid).collection("homes")
                 .limit(1).addSnapshotListener { snapshot, error ->
@@ -177,6 +189,8 @@ class CloudSession(private val context: Context) {
     }
     fun logout() {
         WorkManager.getInstance(context).cancelUniqueWork("haushalt_free_notifications")
+        context.getSharedPreferences("haushalt_cloud", Context.MODE_PRIVATE).edit()
+            .remove("homeId").remove("homeUid").apply()
         auth.signOut()
     }
 }
@@ -192,7 +206,8 @@ class CloudStore(
     private fun setError(e: Exception) { mutable.value = mutable.value.copy(error = e.localizedMessage ?: "Speichern fehlgeschlagen") }
 
     init {
-        context.getSharedPreferences("haushalt_cloud", Context.MODE_PRIVATE).edit().putString("homeId", houseId).apply()
+        context.getSharedPreferences("haushalt_cloud", Context.MODE_PRIVATE).edit()
+            .putString("homeId", houseId).putString("homeUid", uid).apply()
         listeners += home.addSnapshotListener { snap, e ->
             if (e != null) { setError(e); return@addSnapshotListener }
             mutable.value = mutable.value.copy(
@@ -326,6 +341,7 @@ class CloudStore(
         )).addOnFailureListener(::setError)
     }
     override fun setTaskDone(item: HouseholdTask, done: Boolean) {
+        if (item.done == done) return // Avoid repeated writes and repeated recurring copies.
         val ref = home.collection("tasks").document(item.id)
         val update = mapOf(
             "done" to done, "doneBy" to if (done) uid else "",
