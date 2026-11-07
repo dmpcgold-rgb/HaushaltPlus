@@ -23,6 +23,15 @@ class V3LogicTest {
         assertEquals(10, V3Logic.daysRemaining(stock, usage, today))
         assertNull(V3Logic.daysRemaining(stock, emptyList(), today))
     }
+    @Test fun multipleRecipesSubtractPantryStock() {
+        val a = RecipeEntry("a", "Kartoffelgratin", 2, "2|kg|Kartoffeln")
+        val b = RecipeEntry("b", "Kartoffelbrei", 2, "1|kg|Kartoffeln")
+        val have = listOf(StockItem("s", "Kartoffeln", 1, 0, "kg"))
+        val need = V3Logic.missingIngredients(listOf(a to 2, b to 2), have)
+        assertEquals(1, need.size)
+        assertEquals("2", need.first().quantity)
+    }
+
     @Test fun emptyVoiceDoesNotWrite() {
         assertTrue(V3Logic.voiceItems("").isEmpty())
     }

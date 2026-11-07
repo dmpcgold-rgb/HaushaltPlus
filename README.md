@@ -22,10 +22,10 @@ Native Kotlin-/Jetpack-Compose-App mit RAUS0-inspiriertem **dunklem Neon-Design*
 3. Geteilte Einkaufsvorlagen speichern und auf eine ausgewählte Liste anwenden.
 4. Verbrauchsprotokoll für Vorräte und eine nachvollziehbare Schätzung der verbleibenden Tage auf Basis der letzten 14 Tage.
 5. Einkaufsbelege als manuelle Kassenbeträge, Geschäft und Datum speichern; grafische monatliche Auswertung je Geschäft.
-6. Gemeinsame Rezepte und Zutatenmengen pro Portion speichern; Zutaten für eine frei gewählte Personenzahl umrechnen und auf die Liste setzen.
+6. Gemeinsame Rezepte und Zutatenmengen pro Portion speichern; mehrere Gerichte zu einem Menü kombinieren, Portionsmengen zusammenrechnen, identische Einheiten aus dem Vorrat abziehen und nur fehlende Mengen auf die Liste setzen.
 7. Familienkalender mit Wochen- und Monatsansicht der Aufgaben und geplanten Mahlzeiten.
 8. Geräteeinstellungen für Ruhezeiten, Sammelmeldungen, Vorab-Erinnerungen bis sieben Tage und direktes Öffnen des Aufgabenreiters.
-9. Firestore-Offlinespeicherung für Cloud-Daten und atomare Bestandsänderungen per `FieldValue.increment`, die auch offline vorgemerkt werden. Konfliktbedingte Unterschreitungen von Null werden nach Bereitstellung der neuen Firestore-Regeln zurückgewiesen und als Fehler angezeigt.
+9. Firestore-Offlinespeicherung für Cloud-Daten und atomare Bestandsänderungen per `FieldValue.increment`, die auch offline vorgemerkt werden. Konfliktbedingte Unterschreitungen von Null werden nach Bereitstellung der neuen Firestore-Regeln zurückgewiesen und als Fehler angezeigt; die fehlgeschlagene Änderung lässt sich im Vorratsbereich erneut versuchen.
 10. Gemeinsamer Aktivitätsverlauf aus Firestore-Ereignissen; unmittelbares Rückgängig beim Abhaken von Einkaufsartikeln. Lokal werden Aktivitäten auf dem Gerät gespeichert.
 11. Personalisierbare Startseite mit 7 Kacheltypen, deren Reihenfolge und Sichtbarkeit sich pro Gerät einstellen lassen.
 12. Kompakte Navigation mit direkter Schnellwahl für neue Artikel, Aufgaben und Vorräte.
