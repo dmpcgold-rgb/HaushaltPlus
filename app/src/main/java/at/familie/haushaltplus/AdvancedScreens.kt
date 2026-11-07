@@ -45,7 +45,8 @@ fun ExtrasPage(
     data: HouseholdData,
     store: HouseholdStore,
     session: CloudSession?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onJump: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
     var section by rememberSaveable { mutableStateOf("") }
@@ -96,6 +97,15 @@ fun ExtrasPage(
                 ExtraTile(Icons.Default.Paid, "Budget & Ausgaben", "Einkäufe und Monatslimit überblicken", Teal) { section = "budget" }
                 ExtraTile(Icons.Default.People, "Familie & Einladungen", "Haushaltsmitglieder und Freigaben", Blue) { section = "family" }
                 ExtraTile(Icons.Default.NotificationsActive, "Benachrichtigungen", "Einkäufe und Aufgaben auswählen", Neon) { section = "notifications" }
+                ExtraTile(Icons.Default.PhotoCamera, "Kassenbon scannen", "Beleg fotografieren und lokal erkennen", Orange) { section = "ocr" }
+                ExtraTile(Icons.Default.Event, "Mindesthaltbarkeit", "Ablaufende Vorräte und Lebensmittel", Pink) { section = "expiry" }
+                ExtraTile(Icons.Default.PriceChange, "Eigener Preisvergleich", "Preise je Geschäft und Produkt vergleichen", Teal) { section = "prices" }
+                ExtraTile(Icons.Default.Groups, "Faire Aufgabenverteilung", "Aufgaben zwischen Mitgliedern ausbalancieren", Blue) { section = "fairness" }
+                ExtraTile(Icons.Default.Checklist, "Haushalts-Checklisten", "Vorlagen für wiederkehrende Abläufe", Neon) { section = "checklists" }
+                ExtraTile(Icons.Default.RestoreFromTrash, "Papierkorb", "Versehentlich gelöschte Einträge retten", Pink) { section = "trash" }
+                ExtraTile(Icons.Default.ManageSearch, "Alles durchsuchen", "Einkauf, Aufgaben, Rezepte und Belege", Blue) { section = "search" }
+                ExtraTile(Icons.Default.Palette, "Design & Bedienung", "Akzente, Kontrast und kompakte Ansichten", Neon) { section = "appearance" }
+                ExtraTile(Icons.Default.MonitorHeart, "Diagnose & Fehler", "Synchronisierung und Geräteverbindung prüfen", Teal) { section = "diagnostics" }
                 ExtraTile(Icons.Default.SaveAlt, "Sicherung & Wiederherstellung", "Deine Daten in eine JSON-Datei exportieren", Pink) { section = "backup" }
                 ExtraTile(Icons.Default.Security, "Konto & Sicherheit", "Passwort und Konto verwalten", Teal) { section = "account" }
             }
@@ -121,6 +131,8 @@ fun ExtrasPage(
             "account" -> AccountSection(data, session)
             "templates", "receipts", "recipes", "calendar", "activity", "dashboard" ->
                 V3FeaturesPage(data, store, section)
+            "ocr", "expiry", "prices", "fairness", "checklists", "trash", "search",
+            "appearance", "diagnostics" -> V4FeaturesPage(section, data, store, onJump)
         }
         if (status.isNotBlank()) Text(status, color = Teal)
         Spacer(Modifier.height(90.dp))

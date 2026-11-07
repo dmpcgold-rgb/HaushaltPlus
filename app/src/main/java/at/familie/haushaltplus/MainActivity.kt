@@ -287,7 +287,7 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?, reque
                 })
             2 -> TasksPage(data, store, Modifier.padding(padding))
             3 -> StockPage(data, store, Modifier.padding(padding))
-            else -> ExtrasPage(data, store, session, Modifier.padding(padding))
+            else -> ExtrasPage(data, store, session, Modifier.padding(padding), onJump = { selected = it })
         }
     }
     if (quickAdd) AlertDialog(onDismissRequest = { quickAdd = false },
