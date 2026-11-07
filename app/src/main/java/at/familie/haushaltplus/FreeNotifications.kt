@@ -63,6 +63,23 @@ object FreeNotifications {
         }
     }
 
+    fun dueReminders(context: Context, uid: String, homeId: String, documents: List<DocumentSnapshot>) {
+        val prefs = context.getSharedPreferences("haushalt_notifications", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("notify_due", true)) return
+        val today = java.time.LocalDate.now().toString()
+        synchronized(lock) {
+            documents.filter { it.getBoolean("done") != true &&
+                    !it.getString("due").isNullOrBlank() && (it.getString("due") ?: "") <= today }
+                .forEach { doc ->
+                    val key = "due_" + uid + "_" + homeId + "_" + today + "_" + doc.id
+                    if (!prefs.getBoolean(key, false)) {
+                        prefs.edit().putBoolean(key, true).apply()
+                        show(context, "Heute fällig: " + (doc.getString("title") ?: "Haushaltsaufgabe"))
+                    }
+                }
+        }
+    }
+
     private fun show(context: Context, description: String) {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -100,6 +117,9 @@ class FreeNotificationWorker(context: Context, parameters: WorkerParameters) : C
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(40).get(Source.SERVER).await()
             FreeNotifications.process(applicationContext, uid, homeId, docs.documents)
+            val tasks = FirebaseFirestore.getInstance().collection("households").document(homeId)
+                .collection("tasks").whereEqualTo("done", false).limit(60).get(Source.SERVER).await()
+            FreeNotifications.dueReminders(applicationContext, uid, homeId, tasks.documents)
             Result.success()
         } catch (e: Exception) {
             Result.retry()

@@ -205,6 +205,8 @@ class CloudStore(
         }
         listeners += home.collection("tasks").addSnapshotListener { snap, e ->
             if (e != null) { setError(e); return@addSnapshotListener }
+            if (snap != null && !snap.metadata.isFromCache)
+                FreeNotifications.dueReminders(context, uid, houseId, snap.documents)
             mutable.value = mutable.value.copy(tasks = snap?.documents?.map { doc ->
                 HouseholdTask(doc.id, doc.getString("title") ?: "", doc.getString("assignee") ?: "Alle",
                     doc.getString("due") ?: "", doc.getString("repeat") ?: "Nie",
