@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function loggedIn() {
+      return request.auth != null;
+    }
+    function membershipPath(homeId, userId) {
+      return /databases/$(database)/documents/households/$(homeId)/members/$(userId);
+    }
+    function member(homeId) {
+      return loggedIn() && exists(membershipPath(homeId, request.auth.uid));
+    }
+    function owner(homeId) {
+      return loggedIn() && get(/databases/$(database)/documents/households/$(homeId)).data.ownerUid == request.auth.uid;
+    }
+    function validInvite(homeId, code) {
+      return code is string && code.matches('^[A-F0-9]{20}$') &&
+        exists(/databases/$(database)/documents/invites/$(code)) &&
+        get(/databases/$(database)/documents/invites/$(code)).data.householdId == homeId &&
+        get(/databases/$(database)/documents/invites/$(code)).data.active == true &&
+        get(/databases/$(database)/documents/invites/$(code)).data.expiresAt > request.time;
+    }
+    match /users/{userId} {
+      allow read, write: if loggedIn() && request.auth.uid == userId;
+      match /homes/{homeId} {
+        allow read, write: if loggedIn() && request.auth.uid == userId;
+      }
+    }
+    match /invites/{code} {
+      allow get: if loggedIn();
+      allow list: if false;
+      allow create: if loggedIn() && code.matches('^[A-F0-9]{20}$') &&
+        request.resource.data.keys().hasOnly(['householdId', 'createdBy', 'active', 'createdAt', 'expiresAt']) &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.active == true &&
+        request.resource.data.expiresAt > request.time &&
+        request.resource.data.expiresAt <= request.time + duration.value(30, 'd') &&
+        member(request.resource.data.householdId);
+      allow update, delete: if owner(resource.data.householdId);
+    }
+    match /households/{homeId} {
+      allow create: if loggedIn() && request.resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.keys().hasOnly(['name', 'ownerUid', 'createdAt']);
+      allow get, list: if member(homeId);
+      allow update: if owner(homeId) && request.resource.data.ownerUid == resource.data.ownerUid;
+      allow delete: if false;
+      match /members/{userId} {
+        allow read: if member(homeId);
+        allow create: if loggedIn() && request.auth.uid == userId &&
+          request.resource.data.keys().hasOnly(['name', 'joinedAt', 'notifyComplete', 'inviteCode']) &&
+          request.resource.data.name is string &&
+          (owner(homeId) || (request.resource.data.keys().hasAll(['inviteCode']) &&
+            validInvite(homeId, request.resource.data.inviteCode)));
+        allow update: if loggedIn() &&
+          ((request.auth.uid == userId &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'notifyComplete'])) || owner(homeId));
+        allow delete: if owner(homeId) &&
+          get(/databases/$(database)/documents/households/$(homeId)).data.ownerUid != userId;
+      }
+      match /shoppingLists/{listId} {
+        allow read, write: if member(homeId);
+      }
+      match /shoppingItems/{itemId} {
+        allow read, write: if member(homeId);
+      }
+      match /tasks/{taskId} {
+        allow read, write: if member(homeId);
+      }
+      match /stock/{stockId} {
+        allow read, write: if member(homeId);
+      }
+      match /devices/{userId} {
+        allow read: if false; // Admin SDK can still read for push delivery.
+        allow create, update, delete: if member(homeId) && request.auth.uid == userId;
+      }
+    }
+  }
+}
