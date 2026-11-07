@@ -10,7 +10,7 @@
 - Vorrat: Mengen verwalten, Mindestbestand, auf Einkaufsliste setzen
 - Lokaler Modus: dauerhaft auf dem Gerät gespeicherte Daten, **keine** Familie-/Cloud-Funktion
 - Cloud-Modus: E-Mail/Passwort-Konten, Haushalt gründen, per 20-stelligem Code beitreten, Firestore-Echtzeitsync, Firestore-Zugriffsregeln
-- Cloud Functions (zusätzlich bereitzustellen): FCM-Push für neue Artikel und Erledigungen sowie automatische Folgeaufgabe für wiederkehrende Aufgaben
+- Kostenloser Spark-Modus: Aktivitäten in Firestore, lokale Handy-Benachrichtigungen bei aktiver App und Hintergrundkontrolle ab etwa 15 Minuten. Wiederkehrende Aufgaben werden direkt im Android-Client angelegt.
 - GitHub Actions zum Bauen einer **Debug-APK**
 
 ## Für einen offline nutzbaren Test
@@ -47,3 +47,11 @@ Falls du eine Debug-APK über GitHub Actions bauen möchtest: neues Repository a
 - Vollständige Offline-Konfliktbehandlung, Änderungsverlauf und papierloser Haushaltskalender
 - Benachrichtigungseinstellungen, Mehrgeräte-Token, Personen aus Haushalt entfernen, Einladung widerrufen
 - UI-Tests, Firestore-Emulator-/Regeltests, signiertes Release-Build, interne Verteilung
+
+
+## Nur kostenloser Spark-Tarif
+Haushalt+ ist für Spark vorgesehen: **Keine kostenpflichtigen Cloud Functions deployen und keinen Blaze-Plan aktivieren.** Die noch vorhandenen Dateien unter `functions/` sind ein nicht verwendeter Prototyp; `firebase.json` deklariert ausschließlich Firestore-Regeln.
+
+Die neue kostenlose Benachrichtigung verwendet Firestore-Aktivitäten mit Android-WorkManager. Die Zustellung bei geöffneter App ist zeitnah. Hintergrundchecks können aufgrund von Android-Energiesparmechanismen über 15 Minuten dauern. Es ist **kein sofortiges serverseitiges FCM-Push**. Für die Aktivitätsereignisse müssen die aktuellen Firestore-Regeln veröffentlicht werden.
+
+Benötigte Firebase-Dienste auf Spark: Firestore-Datenbank und E-Mail/Passwort-Anmeldung. Firebase-Quoten beachten. Siehe [FIREBASE_SETUP.md](FIREBASE_SETUP.md).

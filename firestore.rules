@@ -69,6 +69,18 @@ service cloud.firestore {
       match /stock/{stockId} {
         allow read, write: if member(homeId);
       }
+      // Client-authored activity: only household members may read, and no member may forge another actor.
+      match /activity/{eventId} {
+        allow read: if member(homeId);
+        allow create: if member(homeId) &&
+          request.resource.data.keys().hasOnly(['actorUid', 'actorName', 'title', 'createdAt']) &&
+          request.resource.data.actorUid == request.auth.uid &&
+          request.resource.data.actorName is string &&
+          request.resource.data.title is string &&
+          request.resource.data.title.size() <= 180 &&
+          request.resource.data.createdAt is timestamp;
+        allow update, delete: if false;
+      }
       match /devices/{userId} {
         allow read: if false; // Admin SDK can still read for push delivery.
         allow create, update, delete: if member(homeId) && request.auth.uid == userId;

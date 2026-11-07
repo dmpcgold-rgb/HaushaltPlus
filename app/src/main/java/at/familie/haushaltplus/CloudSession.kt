@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.security.SecureRandom
 import java.util.Date
+import java.time.LocalDate
+import com.google.firebase.firestore.Query
+import androidx.work.WorkManager
 
 /** Creates/join homes and routes Firestore data into a single observable store. */
 data class CloudState(
@@ -113,7 +116,10 @@ class CloudSession(private val context: Context) {
                 }.addOnFailureListener(::fail)
         }.addOnFailureListener(::fail)
     }
-    fun logout() = auth.signOut()
+    fun logout() {
+        WorkManager.getInstance(context).cancelUniqueWork("haushalt_free_notifications")
+        auth.signOut()
+    }
 }
 
 class CloudStore(
@@ -165,6 +171,13 @@ class CloudStore(
             } ?: emptyList())
         }
         registerDevice()
+        listeners += home.collection("activity").orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(40).addSnapshotListener { snapshot, error ->
+                if (error == null && snapshot != null && !snapshot.metadata.isFromCache) {
+                    FreeNotifications.process(context, uid, houseId, snapshot.documents)
+                }
+            }
+        FreeNotifications.schedule(context)
     }
     private fun registerDevice() {
         FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
@@ -172,10 +185,18 @@ class CloudStore(
                 "updatedAt" to FieldValue.serverTimestamp()))
         }
     }
+    private fun recordActivity(title: String) {
+        home.collection("activity").add(mapOf(
+            "actorUid" to uid, "actorName" to userName,
+            "title" to title.take(180), "createdAt" to FieldValue.serverTimestamp()
+        )).addOnFailureListener(::setError)
+    }
     override fun addShopping(name: String, quantity: String, unit: String, category: String, price: Double, listId: String) {
         home.collection("shoppingItems").add(mapOf("name" to name.trim(), "quantity" to quantity, "unit" to unit,
             "category" to category, "price" to price, "listId" to listId, "bought" to false, "doneBy" to "", "doneByName" to "",
-            "createdBy" to uid, "updatedAt" to FieldValue.serverTimestamp())).addOnFailureListener(::setError)
+            "createdBy" to uid, "updatedAt" to FieldValue.serverTimestamp()))
+            .addOnSuccessListener { recordActivity(userName + " hat " + name.trim() + " hinzugefügt") }
+            .addOnFailureListener(::setError)
     }
     override fun addShoppingList(name: String) {
         home.collection("shoppingLists").add(mapOf("name" to name.trim(), "createdBy" to uid,
@@ -184,7 +205,9 @@ class CloudStore(
     override fun setShoppingDone(item: ShoppingItem, done: Boolean) {
         home.collection("shoppingItems").document(item.id).update(mapOf("bought" to done,
             "doneBy" to if (done) uid else "", "doneByName" to if(done) userName else "",
-            "updatedAt" to FieldValue.serverTimestamp())).addOnFailureListener(::setError)
+            "updatedAt" to FieldValue.serverTimestamp()))
+            .addOnSuccessListener { recordActivity(userName + if (done) " hat " + item.name + " eingekauft" else " hat " + item.name + " wieder geöffnet") }
+            .addOnFailureListener(::setError)
     }
     override fun deleteShopping(item: ShoppingItem) { home.collection("shoppingItems").document(item.id).delete().addOnFailureListener(::setError) }
     override fun addTask(title: String, assignee: String, due: String, repeat: String) {
@@ -193,9 +216,38 @@ class CloudStore(
             "createdBy" to uid, "updatedAt" to FieldValue.serverTimestamp())).addOnFailureListener(::setError)
     }
     override fun setTaskDone(item: HouseholdTask, done: Boolean) {
-        home.collection("tasks").document(item.id).update(mapOf("done" to done, "doneBy" to if(done) uid else "",
-            "doneByName" to if(done) userName else "", "updatedAt" to FieldValue.serverTimestamp(),
-            "completedAt" to if (done) FieldValue.serverTimestamp() else FieldValue.delete())).addOnFailureListener(::setError)
+        val ref = home.collection("tasks").document(item.id)
+        val update = mapOf(
+            "done" to done, "doneBy" to if (done) uid else "",
+            "doneByName" to if (done) userName else "",
+            "updatedAt" to FieldValue.serverTimestamp(),
+            "completedAt" to if (done) FieldValue.serverTimestamp() else FieldValue.delete()
+        )
+        if (done && item.repeat in setOf("Täglich", "Wöchentlich", "Monatlich")) {
+            val due = runCatching { LocalDate.parse(item.due) }.getOrDefault(LocalDate.now())
+            val base = if (due.isBefore(LocalDate.now())) LocalDate.now() else due
+            val next = when (item.repeat) {
+                "Täglich" -> base.plusDays(1)
+                "Wöchentlich" -> base.plusWeeks(1)
+                else -> base.plusMonths(1)
+            }.toString()
+            val batch = db.batch()
+            batch.update(ref, update)
+            val nextId = item.id + "--next-" + next
+            batch.set(home.collection("tasks").document(nextId), mapOf(
+                "title" to item.title, "assignee" to item.assignee, "due" to next,
+                "repeat" to item.repeat, "done" to false, "doneBy" to "", "doneByName" to "",
+                "createdBy" to uid, "createdAt" to FieldValue.serverTimestamp()
+            ))
+            batch.commit().addOnSuccessListener {
+                recordActivity(userName + " hat die Aufgabe " + item.title + " erledigt")
+            }.addOnFailureListener(::setError)
+        } else {
+            ref.update(update).addOnSuccessListener {
+                recordActivity(userName + if (done) " hat die Aufgabe " + item.title + " erledigt"
+                    else " hat die Aufgabe " + item.title + " wieder geöffnet")
+            }.addOnFailureListener(::setError)
+        }
     }
     override fun deleteTask(item: HouseholdTask) { home.collection("tasks").document(item.id).delete().addOnFailureListener(::setError) }
     override fun addStock(name: String, quantity: Int, minimum: Int, unit: String) {

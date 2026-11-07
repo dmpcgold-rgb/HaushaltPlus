@@ -52,19 +52,13 @@ Der Workflow:
 
 Die alte Workflow-Datei `android-debug.yml` bleibt für Offline-Tests bestehen.
 
-## 5. Push-Benachrichtigungen aktivieren
+## 5. Benachrichtigungen kostenlos auf Spark
 
-Die App speichert den FCM-Gerätetoken nach der Anmeldung im Haushalt. Das Senden von Push-Nachrichten erfolgt serverseitig durch `functions/index.js`. Dafür müssen die Cloud Functions im Firebase-Projekt bereitgestellt werden. Normalerweise ist hierfür der **Blaze-Abrechnungsplan** erforderlich, der Kosten verursachen kann:
+Spark beibehalten, keine Zahlungsmethode hinzufügen, keine Cloud Functions deployen und nicht zu Blaze wechseln.
 
-```bash
-cd functions
-npm install
-npm test
-cd ..
-firebase deploy --only functions
-```
+Die App erzeugt ein Mitgliedsereignis in `households/{homeId}/activity`. Auf anderen Handys wird daraus eine lokale Android-Benachrichtigung: bei aktiver App via Firestore-Listener, bei geschlossener App mit Android-WorkManager-Hintergrundabfrage (normalerweise nicht öfter als etwa 15 Minuten, ggf. deutlich später). **Keine echten sofortigen Remote-Push-Nachrichten.**
 
-Vor der Aktivierung Abrechnungsbedingungen prüfen und Kostenwarnungen einrichten. Ein GitHub-Secret alleine aktiviert **keine** Push-Benachrichtigungen.
+Die neuen `firestore.rules` für `activity` müssen veröffentlicht werden. Die Prototyp-Funktionen im Ordner `functions/` werden nicht verwendet und sind auch nicht mehr in `firebase.json` konfiguriert.
 
 ## 6. Verhalten überprüfen
 
@@ -73,7 +67,7 @@ Vor der Aktivierung Abrechnungsbedingungen prüfen und Kostenwarnungen einrichte
 3. Erstes Konto gründet den Haushalt; zweites Konto tritt per Einladungscode bei.
 4. Artikel auf dem ersten Gerät hinzufügen: Er muss auf dem zweiten erscheinen.
 5. Artikel abhaken: Erledigtstatus und Name müssen auf dem anderen Gerät sichtbar werden.
-6. Push nach Deployment der Cloud Functions und erteilter Benachrichtigungsberechtigung testen.
+6. Bei geöffneter App die lokale Android-Benachrichtigung testen; im Hintergrund kann sie deutlich verspätet eintreffen.
 
 Nicht mit echten Haushaltsdaten starten, bevor die Firestore-Regeln und der Zugriff durch Nicht-Mitglieder getestet wurden.
 
