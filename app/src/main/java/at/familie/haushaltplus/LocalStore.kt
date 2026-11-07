@@ -246,6 +246,7 @@ class LocalStore(private val context: Context) : HouseholdStore {
                 id(), item.name, "1", item.unit, "Vorrat") else h.shopping)
         withEvent(changed, item.name + ": Bestand " + newQuantity, "stock")
     }
+    override fun retryFailedStockChange() { /* Local writes are committed immediately. */ }
     override fun deleteStock(item: StockItem) =
         mutate { it.copy(stock = it.stock.filterNot { s -> s.id == item.id }) }
     override fun setBudget(value: Double) = mutate { it.copy(monthlyBudget = value.coerceAtLeast(0.0)) }

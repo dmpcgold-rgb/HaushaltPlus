@@ -47,7 +47,8 @@ data class HouseholdData(
     val ownerUid: String = "", val syncStatus: String = "Lokal", val ownUid: String = "",
     val templates: List<ShoppingTemplate> = emptyList(), val receipts: List<ReceiptEntry> = emptyList(),
     val recipes: List<RecipeEntry> = emptyList(), val stockUsage: List<StockUsage> = emptyList(),
-    val activity: List<ActivityEntry> = emptyList()
+    val activity: List<ActivityEntry> = emptyList(),
+    val stockRetryAvailable: Boolean = false
 )
 
 interface HouseholdStore {
@@ -66,6 +67,7 @@ interface HouseholdStore {
     fun addStock(name: String, quantity: Int, minimum: Int, unit: String)
     fun updateStock(item: StockItem)
     fun changeStock(item: StockItem, amount: Int)
+    fun retryFailedStockChange()
     fun deleteStock(item: StockItem)
     fun setBudget(value: Double)
     fun addMeal(date: String, slot: String, title: String, ingredients: String)

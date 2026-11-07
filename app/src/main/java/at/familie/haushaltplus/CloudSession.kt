@@ -449,6 +449,14 @@ class CloudStore(
             if (item.quantity <= item.minimum) addMissingStockToShopping(item.name, item.unit)
         }.addOnFailureListener(::setError)
     }
+    private var failedStockChange: Pair<String, Int>? = null
+    override fun retryFailedStockChange() {
+        val pending = failedStockChange ?: return
+        val latest = mutable.value.stock.firstOrNull { it.id == pending.first } ?: return
+        failedStockChange = null
+        mutable.value = mutable.value.copy(stockRetryAvailable = false, error = "")
+        changeStock(latest, pending.second)
+    }
     override fun changeStock(item: StockItem, amount: Int) {
         if (amount == 0) return
         val amountSafe = if (amount < 0) amount.coerceAtLeast(-item.quantity.coerceAtLeast(0)) else amount
@@ -459,6 +467,8 @@ class CloudStore(
             "quantity" to FieldValue.increment(amountSafe.toLong()),
             "updatedAt" to FieldValue.serverTimestamp()
         )).addOnSuccessListener {
+            failedStockChange = null
+            mutable.value = mutable.value.copy(stockRetryAvailable = false, error = "")
             if (amountSafe < 0) {
                 home.collection("stockUsage").add(mapOf(
                     "stockId" to item.id, "quantity" to -amountSafe,
@@ -470,6 +480,8 @@ class CloudStore(
             if (item.quantity > item.minimum && item.quantity + amountSafe <= item.minimum)
                 addMissingStockToShopping(item.name, item.unit)
         }.addOnFailureListener { error ->
+            failedStockChange = item.id to amountSafe
+            mutable.value = mutable.value.copy(stockRetryAvailable = true)
             setError(IllegalStateException("Bestandsänderung nicht übernommen: " +
                 (error.localizedMessage ?: "Konflikt").take(120) + " – erneut versuchen"))
         }

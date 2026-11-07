@@ -785,6 +785,13 @@ private fun StockPage(data: HouseholdData, store: HouseholdStore, modifier: Modi
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Header("Vorratskammer", "Was ist noch da – was fehlt bald?")
+            if (data.stockRetryAvailable) ElevatedCard(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Letzte Bestandsänderung fehlgeschlagen", Modifier.weight(1f),
+                        color = AccentPink, style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { store.retryFailedStockChange() }) { Text("Erneut versuchen") }
+                }
+            }
             TextButton(onClick = {
                 data.stock.filter { it.quantity <= it.minimum }.forEach { stock ->
                     if (data.shopping.none { !it.bought && it.name.equals(stock.name, ignoreCase = true) }) {
