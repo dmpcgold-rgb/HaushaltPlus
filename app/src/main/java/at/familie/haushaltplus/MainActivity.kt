@@ -2,6 +2,7 @@ package at.familie.haushaltplus
 
 import android.Manifest
 import android.content.Intent
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -460,8 +461,11 @@ private fun DashboardCard(title: String, value: String, caption: String, icon: a
 @Composable
 private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: Modifier = Modifier,
     activeListId: String, onSelectList: (String) -> Unit, onNewList: () -> Unit,
-    onScan: () -> Unit, scanStatus: String) {
+    onScan: () -> Unit, onVoice: () -> Unit, scanStatus: String,
+    onToggle: (ShoppingItem, Boolean) -> Unit) {
     var showBought by remember { mutableStateOf(true) }
+    var shoppingMode by rememberSaveable { mutableStateOf(false) }
+    var showFilters by rememberSaveable { mutableStateOf(false) }
     var showArchived by rememberSaveable { mutableStateOf(false) }
     var confirmArchive by remember { mutableStateOf(false) }
     var listExpanded by remember { mutableStateOf(false) }
@@ -482,12 +486,23 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
     val favorites = data.shopping.filter { it.bought }.groupingBy { it.name.trim() }.eachCount().entries
         .sortedByDescending { it.value }.take(4).map { it.key }
     val total = inList.filter { !it.bought }.sumOf { it.price }
+    if (shoppingMode) {
+        ShoppingModePage(data, activeListId, onToggle = onToggle, onClose = { shoppingMode = false })
+        return
+    }
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Header("Einkaufslisten", "Gemeinsam einkaufen, live abhaken")
+            Button(onClick = { shoppingMode = true }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Storefront, "Einkaufsmodus")
+                Spacer(Modifier.width(8.dp)); Text("Einkaufsmodus starten")
+            }
             if (scanStatus.isNotBlank()) Text(scanStatus, color = AccentTeal, style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onScan) { Icon(Icons.Default.QrCodeScanner, "Barcode scannen"); Text(" Barcode") }
+                OutlinedButton(onClick = onVoice) {
+                    Icon(Icons.Default.Mic, "Spracheingabe"); Text(" Diktieren")
+                }
                 OutlinedButton(onClick = {
                     val listName = data.lists.firstOrNull { it.id == activeListId }?.name ?: "Einkaufsliste"
                     val content = inList.filter { !it.bought }.sortedBy { it.category }
@@ -502,12 +517,18 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
             }
             OutlinedTextField(search, { search = it }, label = { Text("Artikel suchen") },
                 leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                categories.forEach { category ->
+            TextButton(onClick = { showFilters = !showFilters }) {
+                Icon(if (showFilters) Icons.Default.ExpandLess else Icons.Default.Tune, "Filter")
+                Text(if (showFilters) " Weniger Filter" else " Kategorien filtern")
+            }
+            AnimatedVisibility(showFilters) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    categories.forEach { category ->
                     FilterChip(selected = (categoryFilter == category),
                         onClick = { categoryFilter = category }, label = { Text(category) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = Mint, selectedLabelColor = Color.Black))
+                    }
                 }
             }
             if (favorites.isNotEmpty()) {
@@ -558,9 +579,9 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
         }
         if (ordered.isEmpty()) item { EmptyMessage("Noch nichts auf der Liste", "Mit + kannst du einen Artikel hinzufügen.") }
         items(ordered, key = { it.id }) { item ->
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(horizontal = 7.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = item.bought, onCheckedChange = { store.setShoppingDone(item, it) })
+            ElevatedCard(Modifier.fillMaxWidth().animateContentSize(), shape = RoundedCornerShape(16.dp)) {
+                Row(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = item.bought, onCheckedChange = { onToggle(item, it) })
                     Column(Modifier.weight(1f)) {
                         Text(item.name, fontWeight = FontWeight.Medium,
                             textDecoration = if (item.bought) TextDecoration.LineThrough else null)
@@ -615,6 +636,62 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
             dismissButton = { TextButton(onClick = { renaming = null }) { Text("Abbrechen") } })
     }
 
+}
+
+@Composable
+private fun ShoppingModePage(data: HouseholdData, activeListId: String,
+    onToggle: (ShoppingItem, Boolean) -> Unit, onClose: () -> Unit) {
+    val all = data.shopping.filter { it.listId == activeListId && !it.archived }
+    val open = all.filter { !it.bought }.sortedWith(
+        compareBy<ShoppingItem> { it.category }.thenBy { it.name.lowercase() })
+    val done = all.size - open.size
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 92.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Storefront, "Einkaufsmodus", tint = Mint)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Im Geschäft", style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.ExtraBold)
+                    Text("$done von ${all.size} eingekauft", color = Muted)
+                }
+                TextButton(onClick = onClose) { Text("Fertig") }
+            }
+            LinearProgressIndicator(progress = {
+                if (all.isEmpty()) 0f else done.toFloat() / all.size
+            }, modifier = Modifier.fillMaxWidth().height(10.dp), color = AccentTeal)
+            Text("Große Felder – erledigte Artikel verschwinden automatisch.",
+                color = Muted, style = MaterialTheme.typography.bodySmall)
+        }
+        if (open.isEmpty()) item {
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.CheckCircle, "Alles erledigt", tint = AccentTeal, modifier = Modifier.size(46.dp))
+                    Text("Alles eingekauft!", style = MaterialTheme.typography.titleLarge)
+                    Text("Beende den Einkaufsmodus oder füge weitere Produkte hinzu.", color = Muted)
+                }
+            }
+        }
+        items(open, key = { it.id }) { item ->
+            Surface(onClick = { onToggle(item, true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
+                shape = RoundedCornerShape(18.dp), color = Panel) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFF3D281B)) {
+                        Icon(Icons.Default.CheckCircleOutline, "Einkaufen",
+                            modifier = Modifier.padding(12.dp).size(28.dp), tint = Mint)
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(item.name, style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold)
+                        Text(item.quantity + " " + item.unit + " · " + item.category,
+                            style = MaterialTheme.typography.bodySmall, color = Muted)
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
