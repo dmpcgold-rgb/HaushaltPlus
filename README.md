@@ -1,4 +1,4 @@
-# Haushalt+ v0.2.2 – Android-Familienhaushalt
+# Haushalt+ v0.3.0 – Android-Familienhaushalt
 
 Native Kotlin-/Jetpack-Compose-App mit RAUS0-inspiriertem **dunklem Neon-Design** (Schwarz/Carbon, Orange, Pink, Türkis und Blau). Android-Paketname: `at.familie.haushaltplus`. Quellcode ausschließlich im Gold-Repository `dmpcgold-rgb/HaushaltPlus`.
 
@@ -14,6 +14,30 @@ Native Kotlin-/Jetpack-Compose-App mit RAUS0-inspiriertem **dunklem Neon-Design*
 8. **Barcode-Scanner:** Google Code Scanner (Google Play Services, keine Kamera-Appberechtigung) und einzelne, vom Nutzer ausgelöste Produktnamensabfragen bei Open Food Facts. Offline/bei unbekannten Produkten bleibt der Code als bearbeitbarer Name stehen.
 9. **Essensplan:** Mahlzeiten für die kommenden sieben Tage; Zutaten aus kommagetrennten Rezeptlisten auf die Einkaufsliste übernehmen.
 10. **Daten und Kontosicherheit:** JSON-Export über Android-Dateiauswahl, bestätigter Import fehlender Einträge, Passwort-Zurücksetzen per E-Mail, Konto-Löschung für Nicht-Besitzer nach Reauthentifizierung; Besitzer übertragen vorher die Verwaltung.
+
+## Neu in v0.3.0: 15 Funktions- und Designverbesserungen
+
+1. Einkaufsmodus mit großen, einhändig bedienbaren Abhakflächen, Live-Fortschritt und Ausblendung erledigter Positionen.
+2. Deutsche Spracherkennung über das Android-System und lokale Mengen-/Einheitenanalyse. Vor dem Speichern werden alle erkannten Artikel angezeigt und bestätigt.
+3. Geteilte Einkaufsvorlagen speichern und auf eine ausgewählte Liste anwenden.
+4. Verbrauchsprotokoll für Vorräte und eine nachvollziehbare Schätzung der verbleibenden Tage auf Basis der letzten 14 Tage.
+5. Einkaufsbelege als manuelle Kassenbeträge, Geschäft und Datum speichern; grafische monatliche Auswertung je Geschäft.
+6. Gemeinsame Rezepte und Zutatenmengen pro Portion speichern; Zutaten für eine frei gewählte Personenzahl umrechnen und auf die Liste setzen.
+7. Familienkalender mit Wochen- und Monatsansicht der Aufgaben und geplanten Mahlzeiten.
+8. Geräteeinstellungen für Ruhezeiten, Sammelmeldungen, Vorab-Erinnerungen bis sieben Tage und direktes Öffnen des Aufgabenreiters.
+9. Firestore-Offlinespeicherung für Cloud-Daten und atomare Bestandsänderungen per `FieldValue.increment`, die auch offline vorgemerkt werden. Konfliktbedingte Unterschreitungen von Null werden nach Bereitstellung der neuen Firestore-Regeln zurückgewiesen und als Fehler angezeigt.
+10. Gemeinsamer Aktivitätsverlauf aus Firestore-Ereignissen; unmittelbares Rückgängig beim Abhaken von Einkaufsartikeln. Lokal werden Aktivitäten auf dem Gerät gespeichert.
+11. Personalisierbare Startseite mit 7 Kacheltypen, deren Reihenfolge und Sichtbarkeit sich pro Gerät einstellen lassen.
+12. Kompakte Navigation mit direkter Schnellwahl für neue Artikel, Aufgaben und Vorräte.
+13. Kompakte, anpassungsfähige Listen und ausklappbare Kategorie-Filter.
+14. Einheitliche dunkle RAUS0-inspirierte Neon-Farbwelt mit Orange für Aktionen, Türkis für Erfolg, Pink für Warnungen, Blau für Informationen und zentralen Form-Radien.
+15. Sanft animierte Karten/Filter, haptisches Feedback und eine Einstellung für reduzierte Vibrationen.
+
+Weitere Änderungen: JSON-Sicherungen können auch Rezepte, Einkaufsvorlagen und Belege ergänzend exportieren/importieren; alte lokale Daten bleiben lesbar. Die Version bleibt **Spark-only**.
+
+**Vor dem Cloud-Einsatz zwingend:** Die neue `firestore.rules` in Firebase Console veröffentlichen, da sie die Collections `templates`, `recipes`, `receipts`, `stockUsage` freigibt und negative Bestände verhindert. Keine offenen Testregeln!
+
+**Einschränkungen:** Kein automatisches Kassenbon-OCR oder synchronisiertes Fotoarchiv, da die Belege absichtlich nur als manuelle Beträge/Notizen verarbeitet werden. Die Sprachfunktion benötigt verfügbare Android-Spracherkennung. Hintergrundbenachrichtigungen erfolgen best effort via WorkManager und sind nicht sofortiges Remote-FCM. Die Bestandsprognose ist eine lineare Schätzung, keine präzise Verbrauchsvorhersage. Optimistische, offline gespeicherte Änderungen können nach einer echten Konfliktauflösung abgewiesen werden; eine vollständige manuelle Konfliktmerge-UI gibt es noch nicht. Ein Echtgerätetest mit zwei Personen steht noch aus.
 
 ## Neu in v0.2.2
 
