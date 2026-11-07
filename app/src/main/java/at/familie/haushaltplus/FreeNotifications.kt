@@ -48,8 +48,15 @@ object FreeNotifications {
             val ordered = documents.sortedBy { it.getTimestamp("createdAt")?.toDate()?.time ?: 0L }
             for (doc in ordered) {
                 if (known.add(doc.id) && !firstSync && doc.getString("actorUid") != uid) {
+                    val kind = doc.getString("kind") ?: "all"
+                    val allowed = when(kind) {
+                        "shopping" -> prefs.getBoolean("notify_shopping", true)
+                        "tasks" -> prefs.getBoolean("notify_tasks", true)
+                        "family" -> prefs.getBoolean("notify_family", true)
+                        else -> true
+                    }
                     val title = doc.getString("title") ?: continue
-                    if (title.isNotBlank()) show(context, title)
+                    if (allowed && title.isNotBlank()) show(context, title)
                 }
             }
             prefs.edit().putString(key, known.toList().takeLast(120).joinToString("|")).apply()
