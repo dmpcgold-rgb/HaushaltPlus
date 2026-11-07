@@ -341,7 +341,8 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
     var pendingDeletion by remember { mutableStateOf<ShoppingItem?>(null) }
     var editing by remember { mutableStateOf<ShoppingItem?>(null) }
     var renaming by remember { mutableStateOf<ShoppingList?>(null) }
-    var search by remember { mutableStateOf("") }
+    var search by rememberSaveable { mutableStateOf("") }
+    val context = LocalContext.current
     val inList = data.shopping.filter { it.listId == activeListId }
     val ordered = inList.filter { (showBought || !it.bought) && it.name.contains(search, ignoreCase = true) }
         .sortedWith(compareBy<ShoppingItem> { it.bought }.thenBy { it.category }.thenBy { it.name.lowercase() })
@@ -352,7 +353,20 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
         item {
             Header("Einkaufslisten", "Gemeinsam einkaufen, live abhaken")
             if (scanStatus.isNotBlank()) Text(scanStatus, color = AccentTeal, style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick = onScan) { Icon(Icons.Default.QrCodeScanner, "Barcode scannen"); Text(" Barcode") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onScan) { Icon(Icons.Default.QrCodeScanner, "Barcode scannen"); Text(" Barcode") }
+                OutlinedButton(onClick = {
+                    val listName = data.lists.firstOrNull { it.id == activeListId }?.name ?: "Einkaufsliste"
+                    val content = inList.filter { !it.bought }.sortedBy { it.category }
+                        .joinToString("\n") { "☐ " + it.quantity + " " + it.unit + " " + it.name }
+                    val share = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, listName + "\n\n" +
+                            content.ifBlank { "Keine offenen Artikel" })
+                    }
+                    context.startActivity(Intent.createChooser(share, "Einkaufsliste teilen"))
+                }) { Icon(Icons.Default.Share, "Liste teilen"); Text(" Teilen") }
+            }
             OutlinedTextField(search, { search = it }, label = { Text("Artikel suchen") },
                 leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             if (favorites.isNotEmpty()) {
@@ -405,8 +419,23 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
                             style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                         if (item.bought && item.doneByName.isNotBlank()) Text("Erledigt von ${item.doneByName}", style = MaterialTheme.typography.labelSmall, color = Mint)
                     }
-                    IconButton(onClick = { editing = item }) { Icon(Icons.Default.Edit, "Artikel bearbeiten") }
-                    IconButton(onClick = { pendingDeletion = item }) { Icon(Icons.Default.DeleteOutline, "Löschen") }
+                    var options by remember(item.id) { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { options = true }) { Icon(Icons.Default.MoreVert, "Artikeloptionen") }
+                        DropdownMenu(expanded = options, onDismissRequest = { options = false }) {
+                            DropdownMenuItem(text = { Text("Artikel bearbeiten") }, onClick = {
+                                options = false; editing = item
+                            }, leadingIcon = { Icon(Icons.Default.Edit, null) })
+                            if (item.bought) DropdownMenuItem(text = { Text("Erneut kaufen") }, onClick = {
+                                options = false
+                                store.addShopping(item.name, item.quantity, item.unit,
+                                    item.category, item.price, activeListId)
+                            }, leadingIcon = { Icon(Icons.Default.Replay, null) })
+                            DropdownMenuItem(text = { Text("Löschen") }, onClick = {
+                                options = false; pendingDeletion = item
+                            }, leadingIcon = { Icon(Icons.Default.DeleteOutline, null) })
+                        }
+                    }
                 }
             }
         }
@@ -431,11 +460,34 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
 private fun TasksPage(data: HouseholdData, store: HouseholdStore, modifier: Modifier = Modifier) {
     var pendingDeletion by remember { mutableStateOf<HouseholdTask?>(null) }
     var editing by remember { mutableStateOf<HouseholdTask?>(null) }
+    var filter by rememberSaveable { mutableStateOf("Offen") }
     val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
-    val sorted = data.tasks.sortedWith(compareBy<HouseholdTask> { it.done }.thenBy { it.due.ifBlank { "9999" } })
+    val filtered = data.tasks.filter { task ->
+        when (filter) {
+            "Heute" -> !task.done && task.due.isNotBlank() && task.due <= today
+            "Meine" -> !task.done && (task.assignee.equals(data.ownName, true) ||
+                task.assignee == "Alle")
+            "Offen" -> !task.done
+            else -> true
+        }
+    }
+    val sorted = filtered.sortedWith(compareBy<HouseholdTask> { it.done }.thenBy { it.due.ifBlank { "9999" } })
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { Header("Haushaltsaufgaben", "Zuständig, fällig, erledigt") }
-        if (sorted.isEmpty()) item { EmptyMessage("Keine Aufgaben", "Lege über + eine Aufgabe an.") }
+        item {
+            Header("Haushaltsaufgaben", "Zuständig, fällig, erledigt")
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Offen", "Heute", "Meine", "Alle").forEach { label ->
+                    FilterChip(selected = filter == label, onClick = { filter = label },
+                        label = { Text(label) }, colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Mint, selectedLabelColor = Color.Black))
+                }
+            }
+            Text(sorted.size.toString() + if (sorted.size == 1) " Aufgabe" else " Aufgaben",
+                color = Muted, style = MaterialTheme.typography.bodySmall)
+        }
+        if (sorted.isEmpty()) item {
+            EmptyMessage("Keine passenden Aufgaben", "Wähle einen anderen Filter oder lege eine neue Aufgabe an.")
+        }
         items(sorted, key = { it.id }) { task ->
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(horizontal = 7.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -450,8 +502,18 @@ private fun TasksPage(data: HouseholdData, store: HouseholdStore, modifier: Modi
                             style = MaterialTheme.typography.labelSmall, color = Mint)
                         if (task.done && task.doneByName.isNotBlank()) Text("Erledigt von ${task.doneByName}", style = MaterialTheme.typography.labelSmall, color = Mint)
                     }
-                    IconButton(onClick = { editing = task }) { Icon(Icons.Default.Edit, "Aufgabe bearbeiten") }
-                    IconButton(onClick = { pendingDeletion = task }) { Icon(Icons.Default.DeleteOutline, "Löschen") }
+                    var options by remember(task.id) { mutableStateOf(false) }
+                    Box {
+                        IconButton(onClick = { options = true }) { Icon(Icons.Default.MoreVert, "Aufgabenoptionen") }
+                        DropdownMenu(expanded = options, onDismissRequest = { options = false }) {
+                            DropdownMenuItem(text = { Text("Bearbeiten") }, onClick = {
+                                options = false; editing = task
+                            }, leadingIcon = { Icon(Icons.Default.Edit, null) })
+                            DropdownMenuItem(text = { Text("Löschen") }, onClick = {
+                                options = false; pendingDeletion = task
+                            }, leadingIcon = { Icon(Icons.Default.DeleteOutline, null) })
+                        }
+                    }
                 }
             }
         }
