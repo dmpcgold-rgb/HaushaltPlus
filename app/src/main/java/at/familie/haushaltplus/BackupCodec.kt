@@ -10,7 +10,7 @@ import org.json.JSONObject
 object BackupCodec {
     fun encode(data: HouseholdData): String {
         val root = JSONObject().put("format", "HaushaltPlus-backup")
-            .put("version", 2).put("name", data.name).put("monthlyBudget", data.monthlyBudget)
+            .put("version", 3).put("name", data.name).put("monthlyBudget", data.monthlyBudget)
         root.put("lists", JSONArray().apply { data.lists.forEach { x ->
             put(JSONObject().put("id", x.id).put("name", x.name))
         } })
@@ -31,6 +31,18 @@ object BackupCodec {
         root.put("meals", JSONArray().apply { data.meals.forEach { x ->
             put(JSONObject().put("date", x.date).put("slot", x.slot)
                 .put("title", x.title).put("ingredients", x.ingredients))
+        } })
+        root.put("templates", JSONArray().apply { data.templates.forEach { x ->
+            put(JSONObject().put("name", x.name)
+                .put("itemsJson", V3Logic.itemsToJson(x.items)))
+        } })
+        root.put("recipes", JSONArray().apply { data.recipes.forEach { x ->
+            put(JSONObject().put("name", x.name).put("portions", x.portions)
+                .put("ingredients", x.ingredients))
+        } })
+        root.put("receipts", JSONArray().apply { data.receipts.forEach { x ->
+            put(JSONObject().put("merchant", x.merchant).put("date", x.date)
+                .put("total", x.total).put("note", x.note))
         } })
         return root.toString(2)
     }
@@ -83,6 +95,31 @@ object BackupCodec {
             val title = o.optString("title").trim()
             if (title.isBlank() || existing.meals.any { it.date == date && it.slot == slot && it.title.equals(title, true) }) continue
             store.addMeal(date, slot, title, o.optString("ingredients"))
+            inserted++
+        }
+        for (o in rows("templates")) {
+            val name = o.optString("name").trim()
+            val products = V3Logic.itemsFromJson(o.optString("itemsJson", "[]"))
+            if (name.isBlank() || products.isEmpty() ||
+                existing.templates.any { it.name.equals(name, true) }) continue
+            store.saveTemplate(name, products)
+            inserted++
+        }
+        for (o in rows("recipes")) {
+            val name = o.optString("name").trim()
+            if (name.isBlank() || existing.recipes.any { it.name.equals(name, true) }) continue
+            store.addRecipe(name, o.optInt("portions", 2), o.optString("ingredients"))
+            inserted++
+        }
+        for (o in rows("receipts")) {
+            val date = o.optString("date")
+            val merchant = o.optString("merchant").trim()
+            val value = o.optDouble("total", -1.0)
+            if (merchant.isBlank() || value < 0 ||
+                runCatching { java.time.LocalDate.parse(date) }.isFailure ||
+                existing.receipts.any { it.merchant.equals(merchant, true) &&
+                    it.date == date && it.total == value }) continue
+            store.addReceipt(merchant, date, value, o.optString("note"))
             inserted++
         }
         return inserted.toString() + " Einträge ergänzt (ohne vorhandene Daten zu überschreiben)"
