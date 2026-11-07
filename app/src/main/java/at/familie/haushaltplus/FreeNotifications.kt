@@ -39,7 +39,27 @@ object FreeNotifications {
         )
     }
 
+    fun quietHours(context: Context): Boolean {
+        val prefs = context.getSharedPreferences("haushalt_notifications", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("quiet_enabled", true)) return false
+        val start = runCatching { java.time.LocalTime.parse(prefs.getString("quiet_start", "22:00")) }
+            .getOrDefault(java.time.LocalTime.of(22, 0))
+        val end = runCatching { java.time.LocalTime.parse(prefs.getString("quiet_end", "07:00")) }
+            .getOrDefault(java.time.LocalTime.of(7, 0))
+        val current = java.time.LocalTime.now()
+        return if (start <= end) current >= start && current < end
+            else current >= start || current < end
+    }
+
+    fun scheduleLocal(context: Context) {
+        val request = PeriodicWorkRequestBuilder<LocalReminderWorker>(15, TimeUnit.MINUTES).build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "haushalt_local_due", ExistingPeriodicWorkPolicy.KEEP, request
+        )
+    }
+
     fun process(context: Context, uid: String, homeId: String, documents: List<DocumentSnapshot>) {
+        if (quietHours(context)) return
         val prefs = context.getSharedPreferences("haushalt_notifications", Context.MODE_PRIVATE)
         val key = "seen_" + uid + "_" + homeId
         synchronized(lock) {
@@ -48,6 +68,7 @@ object FreeNotifications {
             // Seed previous events on the first sync; avoid notification floods.
             val firstSync = !prefs.contains(key)
             val ordered = documents.sortedBy { it.getTimestamp("createdAt")?.toDate()?.time ?: 0L }
+            val messages = mutableListOf<Pair<String, Int>>()
             for (doc in ordered) {
                 if (known.add(doc.id) && !firstSync && doc.getString("actorUid") != uid) {
                     val kind = doc.getString("kind") ?: "all"
@@ -58,9 +79,14 @@ object FreeNotifications {
                         else -> true
                     }
                     val title = doc.getString("title") ?: continue
-                    if (allowed && title.isNotBlank()) show(context, title)
+                    if (allowed && title.isNotBlank()) messages.add(
+                        title to if (kind == "shopping") 1 else if (kind == "tasks") 2 else 0
+                    )
                 }
             }
+            if (prefs.getBoolean("notify_summary", true) && messages.size > 1) {
+                show(context, messages.size.toString() + " neue Haushaltsänderungen", 0)
+            } else messages.forEach { (description, tab) -> show(context, description, tab) }
             val latest = documents.mapNotNull { it.getTimestamp("createdAt")?.toDate()?.time }
                 .maxOrNull() ?: 0L
             val cursorKey = "activity_after_" + uid + "_" + homeId
@@ -70,25 +96,57 @@ object FreeNotifications {
         }
     }
 
-    fun dueReminders(context: Context, uid: String, homeId: String, documents: List<DocumentSnapshot>) {
+    private data class Reminder(val key: String, val text: String)
+
+    private fun emitDue(context: Context, uid: String, homeId: String,
+        tasks: List<Pair<String, Pair<String, String>>>) {
         val prefs = context.getSharedPreferences("haushalt_notifications", Context.MODE_PRIVATE)
-        if (!prefs.getBoolean("notify_due", true)) return
-        val today = java.time.LocalDate.now().toString()
+        if (!prefs.getBoolean("notify_due", true) || quietHours(context)) return
+        val today = java.time.LocalDate.now()
+        val daysEarly = prefs.getInt("notify_before_days", 1).coerceIn(0, 7)
+        val candidates = tasks.mapNotNull { (id, detail) ->
+            val (title, due) = detail
+            val date = runCatching { java.time.LocalDate.parse(due) }.getOrNull() ?: return@mapNotNull null
+            val days = java.time.temporal.ChronoUnit.DAYS.between(today, date)
+            if (days > daysEarly) return@mapNotNull null
+            val key = "due_" + uid + "_" + homeId + "_" + today + "_" + id
+            if (prefs.getBoolean(key, false)) null else Reminder(key,
+                (when {
+                    days < 0 -> "Überfällig: "
+                    days == 0L -> "Heute fällig: "
+                    days == 1L -> "Morgen fällig: "
+                    else -> "In " + days + " Tagen fällig: "
+                }) + title)
+        }
+        if (candidates.isEmpty()) return
         synchronized(lock) {
-            documents.filter { it.getBoolean("done") != true &&
-                    !it.getString("due").isNullOrBlank() && (it.getString("due") ?: "") <= today }
-                .forEach { doc ->
-                    val key = "due_" + uid + "_" + homeId + "_" + today + "_" + doc.id
-                    if (!prefs.getBoolean(key, false)) {
-                        val shown = show(context, "Heute fällig: " + (doc.getString("title") ?: "Haushaltsaufgabe"))
-                        // Keep reminders eligible if Android notification permission is missing.
-                        if (shown) prefs.edit().putBoolean(key, true).apply()
-                    }
+            val summary = prefs.getBoolean("notify_summary", true) && candidates.size > 1
+            if (summary) {
+                if (show(context, candidates.size.toString() + " Aufgaben fällig oder bald fällig", 2)) {
+                    val edit = prefs.edit()
+                    candidates.forEach { edit.putBoolean(it.key, true) }
+                    edit.apply()
                 }
+            } else {
+                candidates.take(10).forEach { task ->
+                    if (show(context, task.text, 2)) prefs.edit().putBoolean(task.key, true).apply()
+                }
+            }
         }
     }
 
-    private fun show(context: Context, description: String): Boolean {
+    fun dueReminders(context: Context, uid: String, homeId: String, documents: List<DocumentSnapshot>) {
+        emitDue(context, uid, homeId, documents.filter { it.getBoolean("done") != true }
+            .map { it.id to ((it.getString("title") ?: "Aufgabe") to
+                (it.getString("due") ?: "")) })
+    }
+
+    fun localDueReminders(context: Context, tasks: List<HouseholdTask>) {
+        emitDue(context, "local", "local", tasks.filterNot { it.done }
+            .map { it.id to (it.title to it.due) })
+    }
+
+    private fun show(context: Context, description: String, openTab: Int = 0): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return false
@@ -99,7 +157,9 @@ object FreeNotifications {
             ))
         }
         val pending = PendingIntent.getActivity(
-            context, 0, Intent(context, MainActivity::class.java),
+            context, openTab, Intent(context, MainActivity::class.java)
+                .putExtra("open_tab", openTab)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(context, CHANNEL)
@@ -145,7 +205,8 @@ class FreeNotificationWorker(context: Context, parameters: WorkerParameters) : C
                 androidx.core.content.ContextCompat.checkSelfPermission(
                     applicationContext, Manifest.permission.POST_NOTIFICATIONS
                 ) == PackageManager.PERMISSION_GRANTED
-            if (canNotify && notificationPrefs.getString(dueKey, null) != today) {
+            if (canNotify && !FreeNotifications.quietHours(applicationContext) &&
+                notificationPrefs.getString(dueKey, null) != today) {
                 val tasks = db.collection("households").document(homeId).collection("tasks")
                     .whereEqualTo("done", false).limit(100).get(Source.SERVER).await()
                 FreeNotifications.dueReminders(applicationContext, uid, homeId, tasks.documents)
@@ -155,5 +216,17 @@ class FreeNotificationWorker(context: Context, parameters: WorkerParameters) : C
         } catch (e: Exception) {
             Result.retry()
         }
+    }
+}
+
+class LocalReminderWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
+    override suspend fun doWork(): Result {
+        if (BuildConfig.FIREBASE_ENABLED || FreeNotifications.quietHours(applicationContext))
+            return Result.success()
+        return try {
+            FreeNotifications.localDueReminders(applicationContext,
+                LocalStore(applicationContext).data.value.tasks)
+            Result.success()
+        } catch (_: Exception) { Result.retry() }
     }
 }
