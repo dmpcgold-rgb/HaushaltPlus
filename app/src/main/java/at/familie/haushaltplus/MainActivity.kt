@@ -514,15 +514,36 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
     var renaming by remember { mutableStateOf<ShoppingList?>(null) }
     var search by rememberSaveable { mutableStateOf("") }
     var categoryFilter by rememberSaveable { mutableStateOf("Alle") }
+    var manualSort by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
+    val orderingPrefs = remember { context.getSharedPreferences("haushalt_v4_order", Context.MODE_PRIVATE) }
+    var savedShopOrder by remember(activeListId) {
+        mutableStateOf(orderingPrefs.getString("shopping_" + activeListId, "")
+            ?.split('|')?.filter { it.isNotBlank() } ?: emptyList())
+    }
     val inList = data.shopping.filter { it.listId == activeListId &&
         (showArchived || !it.archived) }
     val archivableCount = data.shopping.count { it.listId == activeListId && it.bought && !it.archived }
     val categories = listOf("Alle") + inList.map { it.category }.distinct().sorted()
-    val ordered = inList.filter { (showBought || !it.bought) &&
+    val visibleItems = inList.filter { (showBought || !it.bought) &&
         (categoryFilter == "Alle" || it.category == categoryFilter) &&
         it.name.contains(search, ignoreCase = true) }
-        .sortedWith(compareBy<ShoppingItem> { it.bought }.thenBy { it.category }.thenBy { it.name.lowercase() })
+    val ordered = if (manualSort) visibleItems.sortedWith(
+        compareBy<ShoppingItem> {
+            savedShopOrder.indexOf(it.id).takeIf { n -> n >= 0 } ?: Int.MAX_VALUE
+        }.thenBy { it.name.lowercase() })
+    else visibleItems.sortedWith(compareBy<ShoppingItem> { it.bought }
+        .thenBy { it.category }.thenBy { it.name.lowercase() })
+    fun moveShopping(id: String, steps: Int) {
+        val ids = ordered.map { it.id }.toMutableList()
+        val index = ids.indexOf(id)
+        if (index < 0) return
+        val destination = (index + steps).coerceIn(0, ids.lastIndex)
+        if (index == destination) return
+        ids.add(destination, ids.removeAt(index))
+        savedShopOrder = ids
+        orderingPrefs.edit().putString("shopping_" + activeListId, ids.joinToString("|")).apply()
+    }
     val favorites = data.shopping.filter { it.bought }.groupingBy { it.name.trim() }.eachCount().entries
         .sortedByDescending { it.value }.take(4).map { it.key }
     val total = inList.filter { !it.bought }.sumOf { it.price }
@@ -606,6 +627,10 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(showBought, { showBought = it })
                 Text("Erledigte Artikel anzeigen")
+                Spacer(Modifier.weight(1f))
+                FilterChip(selected = manualSort, onClick = {
+                    manualSort = !manualSort
+                }, label = { Text("Sortieren") })
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(showArchived, { showArchived = it })
@@ -622,6 +647,7 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
             ElevatedCard(Modifier.fillMaxWidth().animateContentSize(), shape = RoundedCornerShape(16.dp)) {
                 Row(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = item.bought, onCheckedChange = { onToggle(item, it) })
+                    if (manualSort) V4DragHandle(item.id) { steps -> moveShopping(item.id, steps) }
                     Column(Modifier.weight(1f)) {
                         Text(item.name, fontWeight = FontWeight.Medium,
                             textDecoration = if (item.bought) TextDecoration.LineThrough else null)
@@ -637,6 +663,14 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
                             DropdownMenuItem(text = { Text("Artikel bearbeiten") }, onClick = {
                                 options = false; editing = item
                             }, leadingIcon = { Icon(Icons.Default.Edit, null) })
+                            if (manualSort) {
+                                DropdownMenuItem(text = { Text("Nach oben") }, onClick = {
+                                    options = false; moveShopping(item.id, -1)
+                                }, leadingIcon = { Icon(Icons.Default.ArrowUpward, null) })
+                                DropdownMenuItem(text = { Text("Nach unten") }, onClick = {
+                                    options = false; moveShopping(item.id, 1)
+                                }, leadingIcon = { Icon(Icons.Default.ArrowDownward, null) })
+                            }
                             if (item.bought) DropdownMenuItem(text = { Text("Erneut kaufen") }, onClick = {
                                 options = false
                                 store.addShopping(item.name, item.quantity, item.unit,
@@ -739,6 +773,13 @@ private fun TasksPage(data: HouseholdData, store: HouseholdStore, modifier: Modi
     var pendingDeletion by remember { mutableStateOf<HouseholdTask?>(null) }
     var editing by remember { mutableStateOf<HouseholdTask?>(null) }
     var filter by rememberSaveable { mutableStateOf("Offen") }
+    var manualTasks by rememberSaveable { mutableStateOf(false) }
+    val ctx = LocalContext.current
+    val orderPrefs = remember { ctx.getSharedPreferences("haushalt_v4_order", Context.MODE_PRIVATE) }
+    var taskOrder by remember {
+        mutableStateOf(orderPrefs.getString("tasks", "")
+            ?.split('|')?.filter { it.isNotBlank() } ?: emptyList())
+    }
     val today = LocalDate.now().format(DateTimeFormatter.ISO_DATE)
     val filtered = data.tasks.filter { task ->
         when (filter) {
@@ -749,7 +790,22 @@ private fun TasksPage(data: HouseholdData, store: HouseholdStore, modifier: Modi
             else -> true
         }
     }
-    val sorted = filtered.sortedWith(compareBy<HouseholdTask> { it.done }.thenBy { it.due.ifBlank { "9999" } })
+    val sorted = if (manualTasks) filtered.sortedWith(
+        compareBy<HouseholdTask> {
+            taskOrder.indexOf(it.id).takeIf { n -> n >= 0 } ?: Int.MAX_VALUE
+        }.thenBy { it.title.lowercase() })
+    else filtered.sortedWith(compareBy<HouseholdTask> { it.done }
+        .thenBy { it.due.ifBlank { "9999" } })
+    fun moveTask(id: String, steps: Int) {
+        val ids = sorted.map { it.id }.toMutableList()
+        val index = ids.indexOf(id)
+        if (index < 0) return
+        val destination = (index + steps).coerceIn(0, ids.lastIndex)
+        if (destination == index) return
+        ids.add(destination, ids.removeAt(index))
+        taskOrder = ids
+        orderPrefs.edit().putString("tasks", ids.joinToString("|")).apply()
+    }
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Header("Haushaltsaufgaben", "Zuständig, fällig, erledigt")
@@ -760,8 +816,13 @@ private fun TasksPage(data: HouseholdData, store: HouseholdStore, modifier: Modi
                             selectedContainerColor = Mint, selectedLabelColor = Color.Black))
                 }
             }
-            Text(sorted.size.toString() + if (sorted.size == 1) " Aufgabe" else " Aufgaben",
-                color = Muted, style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(sorted.size.toString() + if (sorted.size == 1) " Aufgabe" else " Aufgaben",
+                    color = Muted, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f))
+                FilterChip(selected = manualTasks, onClick = { manualTasks = !manualTasks },
+                    label = { Text("Sortieren") })
+            }
         }
         if (sorted.isEmpty()) item {
             EmptyMessage("Keine passenden Aufgaben", "Wähle einen anderen Filter oder lege eine neue Aufgabe an.")
@@ -770,6 +831,7 @@ private fun TasksPage(data: HouseholdData, store: HouseholdStore, modifier: Modi
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(horizontal = 7.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(task.done, { store.setTaskDone(task, it) })
+                    if (manualTasks) V4DragHandle(task.id) { steps -> moveTask(task.id, steps) }
                     Column(Modifier.weight(1f)) {
                         Text(task.title, fontWeight = FontWeight.SemiBold, textDecoration = if (task.done) TextDecoration.LineThrough else null)
                         Text("Zuständig: ${task.assignee}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
@@ -787,6 +849,14 @@ private fun TasksPage(data: HouseholdData, store: HouseholdStore, modifier: Modi
                             DropdownMenuItem(text = { Text("Bearbeiten") }, onClick = {
                                 options = false; editing = task
                             }, leadingIcon = { Icon(Icons.Default.Edit, null) })
+                            if (manualTasks) {
+                                DropdownMenuItem(text = { Text("Nach oben") }, onClick = {
+                                    options = false; moveTask(task.id, -1)
+                                }, leadingIcon = { Icon(Icons.Default.ArrowUpward, null) })
+                                DropdownMenuItem(text = { Text("Nach unten") }, onClick = {
+                                    options = false; moveTask(task.id, 1)
+                                }, leadingIcon = { Icon(Icons.Default.ArrowDownward, null) })
+                            }
                             DropdownMenuItem(text = { Text("Löschen") }, onClick = {
                                 options = false; pendingDeletion = task
                             }, leadingIcon = { Icon(Icons.Default.DeleteOutline, null) })
