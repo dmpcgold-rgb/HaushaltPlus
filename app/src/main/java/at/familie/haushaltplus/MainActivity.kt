@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.BorderStroke
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -33,9 +37,14 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-private val Ink = Color(0xFF1E3031)
-private val Mint = Color(0xFF097967)
-private val Canvas = Color(0xFFF5F8F6)
+private val Ink = Color(0xFFF9F7FF)
+private val Mint = Color(0xFFFF781E)
+private val Canvas = Color(0xFF090B0F)
+private val Panel = Color(0xFF191B23)
+private val AccentPink = Color(0xFFFF5EA8)
+private val AccentBlue = Color(0xFF55B8FF)
+private val AccentTeal = Color(0xFF4ADBBB)
+private val Muted = Color(0xFFB7B9C7)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,10 +57,13 @@ class MainActivity : ComponentActivity() {
         val local = LocalStore(this)
         val cloud = if (BuildConfig.FIREBASE_ENABLED) CloudSession(this) else null
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme(
-                primary = Mint, onPrimary = Color.White, surface = Color.White,
-                background = Canvas, onBackground = Ink, onSurface = Ink,
-                surfaceVariant = Color(0xFFE2EEE9)
+            MaterialTheme(colorScheme = darkColorScheme(
+                primary = Mint, onPrimary = Color(0xFF1D0E04),
+                secondary = AccentPink, tertiary = AccentTeal,
+                surface = Panel, onSurface = Ink,
+                background = Canvas, onBackground = Ink,
+                surfaceVariant = Color(0xFF292A35), onSurfaceVariant = Ink,
+                outline = Color(0xFF6D5864), error = AccentPink
             )) {
                 if (cloud == null) HouseholdScreen(local, null)
                 else {
@@ -83,9 +95,10 @@ private fun LoginScreen(session: CloudSession, state: CloudState) {
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
+    var resetMessage by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().background(Canvas).verticalScroll(rememberScrollState()).padding(26.dp),
         verticalArrangement = Arrangement.Center) {
-        Text("Haushalt+", style = MaterialTheme.typography.displayMedium, color = Mint, fontWeight = FontWeight.Black)
+        Text("HAUSHALT+", style = MaterialTheme.typography.displayMedium, color = Mint, fontWeight = FontWeight.Black)
         Text("Einkaufen. Organisieren. Gemeinsam erledigen.", Modifier.padding(bottom = 34.dp))
         Header(if (creating) "Konto erstellen" else "Anmelden", "Damit alle im Haushalt dieselben Listen sehen")
         if (creating) OutlinedTextField(name, { name = it }, label = { Text("Dein Name") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -101,6 +114,8 @@ private fun LoginScreen(session: CloudSession, state: CloudState) {
             enabled = !state.busy && email.isNotBlank() && password.length >= 6 && (!creating || name.isNotBlank()),
             modifier = Modifier.fillMaxWidth()) { Text(if (creating) "Konto erstellen" else "Anmelden") }
         TextButton(onClick = { creating = !creating }) { Text(if (creating) "Ich habe schon ein Konto" else "Noch kein Konto? Registrieren") }
+        if (!creating) TextButton(onClick = { session.resetPassword(email) { resetMessage = it } }) { Text("Passwort vergessen?") }
+        if (resetMessage.isNotBlank()) Text(resetMessage, color = AccentTeal)
     }
 }
 
@@ -136,7 +151,7 @@ private fun CreateOrJoinScreen(session: CloudSession, state: CloudState) {
     }
 }
 
-private val pages = listOf("Übersicht", "Einkauf", "Aufgaben", "Vorrat")
+private val pages = listOf("Start", "Einkauf", "Aufgaben", "Vorrat", "Mehr")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?) {
@@ -147,41 +162,70 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?) {
     var addListOpen by remember { mutableStateOf(false) }
     var houseOpen by remember { mutableStateOf(false) }
     var invitation by remember { mutableStateOf("") }
+    var scannedName by remember { mutableStateOf("") }
+    var scanStatus by remember { mutableStateOf("") }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val scanBarcode: () -> Unit = {
+        GmsBarcodeScanning.getClient(context).startScan()
+            .addOnSuccessListener { barcode ->
+                val code = barcode.rawValue.orEmpty()
+                if (code.isNotBlank()) {
+                    scanStatus = "Produkt wird gesucht ..."
+                    scope.launch {
+                        val product = ProductLookup.lookup(code)
+                        scannedName = product ?: "Barcode " + code
+                        scanStatus = if (product == null) "Produkt nicht gefunden – Barcode kann bearbeitet werden" else ""
+                        selected = 1
+                        adding = true
+                    }
+                }
+            }
+            .addOnFailureListener { error -> scanStatus = "Scanner nicht verfügbar: " + (error.localizedMessage ?: "") }
+    }
     Scaffold(
         containerColor = Canvas,
         topBar = {
             TopAppBar(title = {
                 Column {
                     Text("Haushalt+", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(data.name + if (data.cloud) " · synchronisiert" else " · nur auf diesem Gerät",
+                    Text(data.name + " · " + (if (data.cloud) data.syncStatus else "Lokal gespeichert"),
                         style = MaterialTheme.typography.labelSmall, color = Color.Gray, maxLines = 1)
                 }
-            }, actions = { IconButton(onClick = { houseOpen = true }) { Icon(Icons.Default.People, "Haushalt") } })
+            }, actions = { IconButton(onClick = { houseOpen = true }) { Icon(Icons.Default.People, "Haushalt") } },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Canvas, titleContentColor = Ink))
         },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(containerColor = Panel) {
                 pages.forEachIndexed { idx, title ->
                     NavigationBarItem(selected = selected == idx, onClick = { selected = idx },
-                        icon = { Icon(when(idx) { 0 -> Icons.Default.Home; 1 -> Icons.Default.ShoppingCart; 2 -> Icons.Default.CheckCircle; else -> Icons.Default.Inventory2 }, null) },
-                        label = { Text(title) })
+                        icon = { Icon(when(idx) { 0 -> Icons.Default.Home; 1 -> Icons.Default.ShoppingCart; 2 -> Icons.Default.CheckCircle; 3 -> Icons.Default.Inventory2; else -> Icons.Default.MoreHoriz }, title) },
+                        label = { Text(title) },
+                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Mint, selectedTextColor = Mint,
+                            indicatorColor = Color(0xFF3A241B), unselectedIconColor = Muted, unselectedTextColor = Muted))
                 }
             }
         },
         floatingActionButton = {
-            if (selected != 0) FloatingActionButton(onClick = { adding = true }) { Icon(Icons.Default.Add, "Hinzufügen") }
+            if (selected in 1..3) FloatingActionButton(onClick = { adding = true },
+                containerColor = Mint, contentColor = Color.Black) { Icon(Icons.Default.Add, "Hinzufügen") }
         }
     ) { padding ->
         when (selected) {
             0 -> OverviewPage(data, modifier = Modifier.padding(padding), onJump = { selected = it })
-            1 -> ShoppingPage(data, store, Modifier.padding(padding), activeListId, { activeListId = it }, { addListOpen = true })
+            1 -> ShoppingPage(data, store, Modifier.padding(padding), activeListId, { activeListId = it },
+                { addListOpen = true }, scanBarcode, scanStatus)
             2 -> TasksPage(data, store, Modifier.padding(padding))
-            else -> StockPage(data, store, Modifier.padding(padding))
+            3 -> StockPage(data, store, Modifier.padding(padding))
+            else -> ExtrasPage(data, store, session, Modifier.padding(padding))
         }
     }
     if (adding) when (selected) {
-        1 -> AddShoppingDialog(onDismiss = { adding = false }, onAdd = { n,q,u,c,p -> store.addShopping(n,q,u,c,p,activeListId); adding = false })
-        2 -> AddTaskDialog(data, onDismiss = { adding = false }, onAdd = { t,a,d,r -> store.addTask(t,a,d,r); adding = false })
+        1 -> AddShoppingDialog(initialName = scannedName,
+            onDismiss = { adding = false; scannedName = ""; scanStatus = "" },
+            onAdd = { n,q,u,c,p -> store.addShopping(n,q,u,c,p,activeListId); adding = false; scannedName = ""; scanStatus = "" })
+        2 -> AddTaskDialog(data, onDismiss = { adding = false },
+            onAdd = { t,a,d,r,rotate -> store.addTask(t,a,d,r,rotate); adding = false })
         3 -> AddStockDialog(onDismiss = { adding = false }, onAdd = { n,q,m,u -> store.addStock(n,q,m,u); adding = false })
     }
     if (addListOpen) {
@@ -210,7 +254,7 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?) {
                             context.startActivity(Intent.createChooser(share, "Einladung teilen"))
                         }) { Icon(Icons.Default.Share, null); Spacer(Modifier.width(6.dp)); Text("Code teilen") }
                     }
-                } else Text("Für Echtzeit-Freigabe und Push muss Firebase eingerichtet werden. Diese Version speichert nur lokal.")
+                } else Text("Diese Version speichert nur lokal. Die Familienfreigabe funktioniert in der Firebase-Version.")
                 if (session != null) TextButton(onClick = { houseOpen = false; session.logout() }) { Text("Abmelden") }
             }
         }, confirmButton = { TextButton(onClick = { houseOpen = false }) { Text("Schließen") } }
@@ -224,7 +268,18 @@ private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJ
     val taskOpen = data.tasks.count { !it.done }
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            Header("Alles im Blick", "Dein Haushalt auf einen Blick")
+            Box(Modifier.fillMaxWidth().background(
+                brush = Brush.linearGradient(listOf(Color(0xFF592315), Color(0xFF401C3C), Color(0xFF1A2349))),
+                shape = RoundedCornerShape(26.dp)
+            ).padding(23.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text("✦  DEIN ZUHAUSE", style = MaterialTheme.typography.labelLarge,
+                        color = Color(0xFFFFAE80), fontWeight = FontWeight.ExtraBold)
+                    Text("Alles im Griff.", style = MaterialTheme.typography.headlineLarge,
+                        color = Color.White, fontWeight = FontWeight.Black)
+                    Text("Einkaufen · Planen · Erledigen", color = Color(0xFFEAC8E4))
+                }
+            }
             if (data.error.isNotBlank()) Text(data.error, color = MaterialTheme.colorScheme.error)
         }
         item { DashboardCard("Einkauf", "$shoppingOpen offen", "${data.shopping.count { it.bought }} bereits besorgt", Icons.Default.ShoppingBasket, onClick = { onJump(1) }) }
@@ -250,10 +305,19 @@ private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJ
 
 @Composable
 private fun DashboardCard(title: String, value: String, caption: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+    ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, Color(0xFF39303B))) {
         Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFFD9EEE8)) {
-                Icon(icon, null, Modifier.padding(14.dp).size(28.dp), tint = Mint)
+            Surface(shape = RoundedCornerShape(14.dp), color = when(title) {
+                "Einkauf" -> Color(0xFF42261B)
+                "Aufgaben" -> Color(0xFF3C1F39)
+                else -> Color(0xFF183945)
+            }) {
+                Icon(icon, null, Modifier.padding(14.dp).size(28.dp), tint = when(title) {
+                    "Einkauf" -> Mint
+                    "Aufgaben" -> AccentPink
+                    else -> AccentBlue
+                })
             }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
