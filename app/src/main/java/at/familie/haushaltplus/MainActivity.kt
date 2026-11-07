@@ -147,6 +147,9 @@ private fun CreateOrJoinScreen(session: CloudSession, state: CloudState) {
             }
         }
         if (state.error.isNotBlank()) Text(state.error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 14.dp))
+        if (state.error.startsWith("Kein Zugriff auf den gespeicherten Haushalt")) {
+            OutlinedButton(onClick = session::unlinkUnavailableHome) { Text("Alte Verknüpfung entfernen") }
+        }
         TextButton(onClick = session::logout) { Text("Abmelden") }
     }
 }
