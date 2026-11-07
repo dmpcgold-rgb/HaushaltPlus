@@ -52,7 +52,7 @@ object FreeNotifications {
                     if (title.isNotBlank()) show(context, title)
                 }
             }
-            prefs.edit().putString(key, known.takeLast(120).joinToString("|")).apply()
+            prefs.edit().putString(key, known.toList().takeLast(120).joinToString("|")).apply()
         }
     }
 
