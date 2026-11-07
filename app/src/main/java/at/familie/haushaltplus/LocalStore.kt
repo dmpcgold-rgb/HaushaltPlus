@@ -84,7 +84,7 @@ class LocalStore(private val context: Context) : HouseholdStore {
                 trash = list("trash") {
                     TrashEntry(it.optString("id"), it.optString("type"), it.optString("label"),
                         it.optString("payload"), it.optLong("deletedAt"))
-                }.filterNot(V4TrashCodec::isExpired),
+                }.filterNot { V4TrashCodec.isExpired(it) },
                 syncStatus = "Lokal gespeichert"
             )
         } catch (_: Exception) {
@@ -158,7 +158,7 @@ class LocalStore(private val context: Context) : HouseholdStore {
                 .put("tasks", JSONArray(v.tasks)))
         } })
         root.put("trash", JSONArray().apply {
-            next.trash.filterNot(V4TrashCodec::isExpired).takeLast(200).forEach { v ->
+            next.trash.filterNot { V4TrashCodec.isExpired(it) }.takeLast(200).forEach { v ->
                 put(JSONObject().put("id", v.id).put("type", v.type).put("label", v.label)
                     .put("payload", v.payload).put("deletedAt", v.deletedAt))
             }

@@ -323,7 +323,7 @@ class CloudStore(
                 mutable.value = mutable.value.copy(trash = snap?.documents?.map { d ->
                     TrashEntry(d.id, d.getString("type") ?: "", d.getString("label") ?: "",
                         d.getString("payload") ?: "", d.getLong("deletedAt") ?: 0L)
-                }?.filterNot(V4TrashCodec::isExpired) ?: emptyList())
+                }?.filterNot { V4TrashCodec.isExpired(it) } ?: emptyList())
             }
         listeners += home.collection("activity").orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(40).addSnapshotListener { snapshot, error ->
