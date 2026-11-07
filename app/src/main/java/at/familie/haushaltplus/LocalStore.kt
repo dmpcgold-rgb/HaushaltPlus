@@ -29,7 +29,7 @@ class LocalStore(private val context: Context) : HouseholdStore {
             }
             HouseholdData(
                 id = "local", name = root.optString("name", "Unser Zuhause"),
-                ownName = root.optString("ownName", "Ich"), members = listOf(Member("local", "Ich")),
+                ownName = root.optString("ownName", "Ich"), ownUid = "local", members = listOf(Member("local", "Ich")),
                 lists = listOf(ShoppingList()) + list("lists") { ShoppingList(it.optString("id"), it.optString("name")) },
                 shopping = list("shopping") {
                     ShoppingItem(it.optString("id"), it.optString("name"), it.optString("quantity", "1"),
@@ -45,7 +45,7 @@ class LocalStore(private val context: Context) : HouseholdStore {
                 },
                 stock = list("stock") {
                     StockItem(it.optString("id"), it.optString("name"), it.optInt("quantity"),
-                        it.optInt("minimum", 1), it.optString("unit", "Stk"))
+                        it.optInt("minimum", 1), it.optString("unit", "Stk"), it.optString("expiresOn"))
                 },
                 meals = list("meals") {
                     MealEntry(it.optString("id"), it.optString("date"),
@@ -72,6 +72,19 @@ class LocalStore(private val context: Context) : HouseholdStore {
                     ActivityEntry(it.optString("id"), it.optString("actor"), it.optString("title"),
                         it.optString("kind"), it.optLong("createdAt"))
                 },
+                prices = list("prices") {
+                    PriceEntry(it.optString("id"), it.optString("product"), it.optString("shop"),
+                        it.optDouble("unitPrice"), it.optString("unit", "Stk"), it.optString("date"))
+                },
+                checklists = list("checklists") {
+                    val a = it.optJSONArray("tasks") ?: JSONArray()
+                    ChecklistTemplate(it.optString("id"), it.optString("name"),
+                        (0 until a.length()).map { i -> a.optString(i) }.filter(String::isNotBlank))
+                },
+                trash = list("trash") {
+                    TrashEntry(it.optString("id"), it.optString("type"), it.optString("label"),
+                        it.optString("payload"), it.optLong("deletedAt"))
+                }.filterNot(V4TrashCodec::isExpired),
                 syncStatus = "Lokal gespeichert"
             )
         } catch (_: Exception) {
@@ -106,7 +119,7 @@ class LocalStore(private val context: Context) : HouseholdStore {
         root.put("stock", JSONArray().apply {
             next.stock.forEach { v ->
                 put(JSONObject().put("id",v.id).put("name",v.name).put("quantity",v.quantity)
-                    .put("minimum",v.minimum).put("unit",v.unit))
+                    .put("minimum",v.minimum).put("unit",v.unit).put("expiresOn",v.expiresOn))
             }
         })
         root.put("meals", JSONArray().apply {
@@ -136,6 +149,20 @@ class LocalStore(private val context: Context) : HouseholdStore {
                 .put("actor",v.actor).put("title",v.title).put("kind",v.kind)
                 .put("createdAt",v.createdAt)) }
         })
+        root.put("prices", JSONArray().apply { next.prices.forEach { v ->
+            put(JSONObject().put("id", v.id).put("product", v.product).put("shop", v.shop)
+                .put("unitPrice", v.unitPrice).put("unit", v.unit).put("date", v.date))
+        } })
+        root.put("checklists", JSONArray().apply { next.checklists.forEach { v ->
+            put(JSONObject().put("id", v.id).put("name", v.name)
+                .put("tasks", JSONArray(v.tasks)))
+        } })
+        root.put("trash", JSONArray().apply {
+            next.trash.filterNot(V4TrashCodec::isExpired).takeLast(200).forEach { v ->
+                put(JSONObject().put("id", v.id).put("type", v.type).put("label", v.label)
+                    .put("payload", v.payload).put("deletedAt", v.deletedAt))
+            }
+        })
         prefs.edit().putString("data",root.toString()).apply()
         mutable.value = next.copy(syncStatus = "Lokal gespeichert")
     }
@@ -148,16 +175,13 @@ class LocalStore(private val context: Context) : HouseholdStore {
         mutate { h ->
             val initial = withEvent(h, "Artikel hinzugefügt: " + name.trim(), "shopping")
             val duplicate = initial.shopping.firstOrNull {
-                !it.bought && it.listId == listId && it.name.equals(name.trim(), ignoreCase = true)
-                    && it.unit.equals(unit, ignoreCase = true)
+                !it.bought && it.listId == listId && it.name.equals(name.trim(), ignoreCase = true) &&
+                    V4Logic.combine(it.quantity, it.unit, quantity, unit) != null
             }
-            val oldQty = duplicate?.quantity?.replace(',', '.')?.toDoubleOrNull()
-            val newQty = quantity.replace(',', '.').toDoubleOrNull()
-            if (duplicate != null && oldQty != null && newQty != null) {
-                val sum = oldQty + newQty
-                val qty = if (sum == sum.toLong().toDouble()) sum.toLong().toString() else sum.toString()
+            val sum = duplicate?.let { V4Logic.combine(it.quantity, it.unit, quantity, unit) }
+            if (duplicate != null && sum != null) {
                 initial.copy(shopping = initial.shopping.map {
-                    if (it.id == duplicate.id) it.copy(quantity = qty, price = it.price + price) else it
+                    if (it.id == duplicate.id) it.copy(quantity = sum, price = it.price + price) else it
                 })
             } else {
                 initial.copy(shopping = initial.shopping + ShoppingItem(id(), name.trim(), quantity, unit, category, price = price, listId = listId))
