@@ -393,7 +393,20 @@ class CloudStore(
                 batch.commit().addOnFailureListener(::setError)
             }
     }
-    override fun deleteShopping(item: ShoppingItem) { home.collection("shoppingItems").document(item.id).delete().addOnFailureListener(::setError) }
+    private fun trash(type: String, label: String, originalId: String,
+        collection: String, payload: String) {
+        val doc = home.collection("trash").document()
+        val batch = db.batch()
+        batch.set(doc, mapOf(
+            "type" to type, "label" to label.take(120), "payload" to payload.take(12000),
+            "deletedAt" to System.currentTimeMillis(), "deletedBy" to uid
+        ))
+        batch.delete(home.collection(collection).document(originalId))
+        batch.commit().addOnFailureListener(::setError)
+    }
+    override fun deleteShopping(item: ShoppingItem) {
+        trash("shopping", item.name, item.id, "shoppingItems", V4TrashCodec.shopping(item))
+    }
     override fun addTask(title: String, assignee: String, due: String, repeat: String, rotate: Boolean) {
         home.collection("tasks").add(mapOf("title" to title.trim(), "assignee" to assignee,
             "due" to due, "repeat" to repeat, "rotate" to rotate, "done" to false, "doneBy" to "", "doneByName" to "",
@@ -452,7 +465,9 @@ class CloudStore(
             }
         }
     }
-    override fun deleteTask(item: HouseholdTask) { home.collection("tasks").document(item.id).delete().addOnFailureListener(::setError) }
+    override fun deleteTask(item: HouseholdTask) {
+        trash("task", item.title, item.id, "tasks", V4TrashCodec.task(item))
+    }
     override fun addStock(name: String, quantity: Int, minimum: Int, unit: String) {
         home.collection("stock").add(mapOf("name" to name.trim(), "quantity" to quantity,
             "minimum" to minimum, "unit" to unit, "expiresOn" to "", "updatedAt" to FieldValue.serverTimestamp()))
@@ -511,7 +526,9 @@ class CloudStore(
                 (error.localizedMessage ?: "Konflikt").take(120) + " – erneut versuchen"))
         }
     }
-    override fun deleteStock(item: StockItem) { home.collection("stock").document(item.id).delete().addOnFailureListener(::setError) }
+    override fun deleteStock(item: StockItem) {
+        trash("stock", item.name, item.id, "stock", V4TrashCodec.stock(item))
+    }
     override fun setBudget(value: Double) {
         if (mutable.value.ownerUid != uid) {
             setError(IllegalStateException("Nur die Haushaltsverwaltung darf das Budget ändern"))
@@ -580,7 +597,70 @@ class CloudStore(
         )).addOnFailureListener(::setError)
     }
     override fun deleteRecipe(item: RecipeEntry) {
-        home.collection("recipes").document(item.id).delete().addOnFailureListener(::setError)
+        trash("recipe", item.name, item.id, "recipes", V4TrashCodec.recipe(item))
+    }
+    override fun addPrice(product: String, shop: String, unitPrice: Double, unit: String, date: String) {
+        if (product.isBlank() || shop.isBlank() || unitPrice <= 0.0) return
+        home.collection("prices").add(mapOf(
+            "product" to product.trim().take(100), "shop" to shop.trim().take(100),
+            "unitPrice" to unitPrice, "unit" to unit, "date" to date,
+            "createdBy" to uid
+        )).addOnFailureListener(::setError)
+    }
+    override fun deletePrice(item: PriceEntry) {
+        home.collection("prices").document(item.id).delete().addOnFailureListener(::setError)
+    }
+    override fun saveChecklist(name: String, titles: List<String>) {
+        if (name.isBlank() || titles.isEmpty()) return
+        home.collection("checklists").add(mapOf(
+            "name" to name.trim().take(100), "tasks" to titles.take(80),
+            "createdBy" to uid
+        )).addOnFailureListener(::setError)
+    }
+    override fun deleteChecklist(item: ChecklistTemplate) {
+        home.collection("checklists").document(item.id).delete().addOnFailureListener(::setError)
+    }
+    override fun restoreTrash(item: TrashEntry) {
+        if (V4TrashCodec.isExpired(item)) return
+        runCatching {
+            val obj = org.json.JSONObject(item.payload)
+            val original = obj.optString("id").takeIf(String::isNotBlank)
+                ?: return@runCatching
+            val (collection, data) = when(item.type) {
+                "shopping" -> "shoppingItems" to mapOf<String, Any>(
+                    "name" to obj.optString("name"), "quantity" to obj.optString("quantity", "1"),
+                    "unit" to obj.optString("unit", "Stk"),
+                    "category" to obj.optString("category", "Sonstiges"),
+                    "price" to obj.optDouble("price", 0.0),
+                    "listId" to obj.optString("listId", "standard"),
+                    "bought" to obj.optBoolean("bought"),
+                    "boughtAt" to obj.optString("boughtAt"),
+                    "archived" to obj.optBoolean("archived"),
+                    "doneBy" to "", "doneByName" to "")
+                "task" -> "tasks" to mapOf<String, Any>(
+                    "title" to obj.optString("title"), "assignee" to obj.optString("assignee", "Alle"),
+                    "due" to obj.optString("due"), "repeat" to obj.optString("repeat", "Nie"),
+                    "rotate" to obj.optBoolean("rotate"), "done" to obj.optBoolean("done"),
+                    "doneBy" to "", "doneByName" to "")
+                "recipe" -> "recipes" to mapOf<String, Any>(
+                    "name" to obj.optString("name"), "portions" to obj.optInt("portions", 2),
+                    "ingredients" to obj.optString("ingredients"))
+                "stock" -> "stock" to mapOf<String, Any>(
+                    "name" to obj.optString("name"), "quantity" to obj.optInt("quantity"),
+                    "minimum" to obj.optInt("minimum", 1), "unit" to obj.optString("unit", "Stk"),
+                    "expiresOn" to obj.optString("expiresOn"))
+                else -> return@runCatching
+            }
+            // Restoring to a fresh ID avoids accidentally overwriting a newer family edit.
+            val doc = home.collection(collection).document()
+            val batch = db.batch()
+            batch.set(doc, data)
+            batch.delete(home.collection("trash").document(item.id))
+            batch.commit().addOnFailureListener(::setError)
+        }.onFailure(::setError)
+    }
+    override fun purgeTrash(item: TrashEntry) {
+        home.collection("trash").document(item.id).delete().addOnFailureListener(::setError)
     }
     override fun createInvite(reply: (String) -> Unit) {
         val chars = "ABCDEF0123456789"
