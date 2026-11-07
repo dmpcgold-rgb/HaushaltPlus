@@ -7,6 +7,14 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.speech.RecognizerIntent
+import android.content.ActivityNotFoundException
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -47,9 +55,11 @@ private val AccentTeal = Color(0xFF4ADBBB)
 private val Muted = Color(0xFFB7B9C7)
 
 class MainActivity : ComponentActivity() {
+    private var requestedTab by mutableIntStateOf(0)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestedTab = intent?.getIntExtra("open_tab", 0) ?: 0
         val local = LocalStore(this)
         val cloud = if (BuildConfig.FIREBASE_ENABLED) CloudSession(this) else null
         setContent {
@@ -61,19 +71,24 @@ class MainActivity : ComponentActivity() {
                 surfaceVariant = Color(0xFF292A35), onSurfaceVariant = Ink,
                 outline = Color(0xFF6D5864), error = AccentPink
             )) {
-                if (cloud == null) HouseholdScreen(local, null)
+                if (cloud == null) HouseholdScreen(local, null, requestedTab)
                 else {
                     val state by cloud.state.collectAsState()
                     when {
                         !state.signedIn -> LoginScreen(cloud, state)
                         state.needsHousehold -> CreateOrJoinScreen(cloud, state)
-                        state.store != null -> HouseholdScreen(state.store!!, cloud)
+                        state.store != null -> HouseholdScreen(state.store!!, cloud, requestedTab)
                         state.busy -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                         else -> CreateOrJoinScreen(cloud, state)
                     }
                 }
             }
         }
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        requestedTab = intent.getIntExtra("open_tab", 0)
     }
 }
 
@@ -153,9 +168,12 @@ private fun CreateOrJoinScreen(session: CloudSession, state: CloudState) {
 private val pages = listOf("Start", "Einkauf", "Aufgaben", "Vorrat", "Mehr")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?) {
+private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?, requestedTab: Int = 0) {
     val data by store.data.collectAsState()
-    var selected by rememberSaveable { mutableIntStateOf(0) }
+    var selected by rememberSaveable { mutableIntStateOf(requestedTab) }
+    LaunchedEffect(requestedTab) { selected = requestedTab.coerceIn(0, 4) }
+    val snackbar = remember { SnackbarHostState() }
+    val haptics = LocalHapticFeedback.current
     var adding by remember { mutableStateOf(false) }
     var activeListId by rememberSaveable { mutableStateOf("standard") }
     var addListOpen by remember { mutableStateOf(false) }
@@ -163,8 +181,26 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?) {
     var invitation by remember { mutableStateOf("") }
     var scannedName by remember { mutableStateOf("") }
     var scanStatus by remember { mutableStateOf("") }
+    var quickAdd by remember { mutableStateOf(false) }
+    var recognized by remember { mutableStateOf<List<TemplateProduct>>(emptyList()) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val voiceLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull().orEmpty()
+        recognized = V3Logic.voiceItems(spoken)
+    }
+    val startVoice: () -> Unit = {
+        try {
+            voiceLauncher.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "de-AT")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Was soll auf die Einkaufsliste?")
+            })
+        } catch (_: ActivityNotFoundException) {
+            scanStatus = "Keine Spracherkennung auf diesem Gerät verfügbar"
+        }
+    }
     val scanBarcode: () -> Unit = {
         GmsBarcodeScanning.getClient(context).startScan()
             .addOnSuccessListener { barcode ->
@@ -184,6 +220,7 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?) {
     }
     Scaffold(
         containerColor = Canvas,
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(title = {
                 Column {
@@ -206,19 +243,56 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?) {
             }
         },
         floatingActionButton = {
-            if (selected in 1..3) FloatingActionButton(onClick = { adding = true },
+            FloatingActionButton(onClick = { if (selected in 1..3) adding = true else quickAdd = true },
                 containerColor = Mint, contentColor = Color.Black) { Icon(Icons.Default.Add, "Hinzufügen") }
         }
     ) { padding ->
         when (selected) {
             0 -> OverviewPage(data, modifier = Modifier.padding(padding), onJump = { selected = it })
             1 -> ShoppingPage(data, store, Modifier.padding(padding), activeListId, { activeListId = it },
-                { addListOpen = true }, scanBarcode, scanStatus)
+                { addListOpen = true }, scanBarcode, startVoice, scanStatus, onToggle = { item, checked ->
+                    store.setShoppingDone(item, checked)
+                    val vibrate = !context.getSharedPreferences("haushalt_v3_ui", Context.MODE_PRIVATE)
+                        .getBoolean("reduce_motion", false)
+                    if (vibrate) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    scope.launch {
+                        val result = snackbar.showSnackbar(
+                            if (checked) "Eingekauft: " + item.name else "Wieder geöffnet: " + item.name,
+                            actionLabel = "Rückgängig", withDismissAction = false,
+                            duration = SnackbarDuration.Short)
+                        if (result == SnackbarResult.ActionPerformed) store.setShoppingDone(item, !checked)
+                    }
+                })
             2 -> TasksPage(data, store, Modifier.padding(padding))
             3 -> StockPage(data, store, Modifier.padding(padding))
             else -> ExtrasPage(data, store, session, Modifier.padding(padding))
         }
     }
+    if (quickAdd) AlertDialog(onDismissRequest = { quickAdd = false },
+        title = { Text("Schnell hinzufügen") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(1 to "Einkaufsartikel", 2 to "Haushaltsaufgabe", 3 to "Vorratsartikel").forEach { (tab, label) ->
+                OutlinedButton(onClick = { selected = tab; adding = true; quickAdd = false },
+                    modifier = Modifier.fillMaxWidth()) { Text(label) }
+            }
+        } },
+        confirmButton = { TextButton(onClick = { quickAdd = false }) { Text("Schließen") } }
+    )
+    if (recognized.isNotEmpty()) AlertDialog(
+        onDismissRequest = { recognized = emptyList() },
+        title = { Text("Spracheingabe prüfen") },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("Erkannte Artikel bitte vor dem Übernehmen prüfen:", color = Muted)
+            recognized.forEach { product ->
+                Text(product.quantity + " " + product.unit + " " + product.name)
+            }
+        } },
+        confirmButton = { TextButton(onClick = {
+            recognized.forEach { p -> store.addShopping(p.name, p.quantity, p.unit, p.category, 0.0, activeListId) }
+            recognized = emptyList()
+        }) { Text("Artikel hinzufügen") } },
+        dismissButton = { TextButton(onClick = { recognized = emptyList() }) { Text("Abbrechen") } }
+    )
     if (adding) when (selected) {
         1 -> AddShoppingDialog(initialName = scannedName,
             onDismiss = { adding = false; scannedName = ""; scanStatus = "" },
@@ -262,65 +336,97 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?) {
 
 @Composable
 private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJump: (Int) -> Unit) {
+    val context = LocalContext.current
+    val order = DashboardOptions.read(context)
     val missing = data.stock.count { it.quantity <= it.minimum }
     val activeShopping = data.shopping.filter { !it.archived }
-    val shoppingOpen = activeShopping.count { !it.bought }
-    val taskOpen = data.tasks.count { !it.done }
-    val today = LocalDate.now().toString()
-    val dueTasks = data.tasks.filter { !it.done && it.due.isNotBlank() && it.due <= today }
+    val open = activeShopping.count { !it.bought }
+    val due = data.tasks.filter { !it.done && it.due.isNotBlank() && it.due <= LocalDate.now().toString() }
         .sortedBy { it.due }
-    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val month = java.time.YearMonth.now().toString()
+    val spent = data.receipts.filter { it.date.startsWith(month) }.sumOf { it.total }
+    LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 10.dp, 16.dp, 100.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
             Box(Modifier.fillMaxWidth().background(
-                brush = Brush.linearGradient(listOf(Color(0xFF592315), Color(0xFF401C3C), Color(0xFF1A2349))),
-                shape = RoundedCornerShape(26.dp)
-            ).padding(23.dp)) {
+                brush = Brush.linearGradient(listOf(Color(0xFF63200A), Color(0xFF401B40), Color(0xFF142244))),
+                shape = RoundedCornerShape(25.dp)
+            ).padding(21.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Text("✦  DEIN ZUHAUSE", style = MaterialTheme.typography.labelLarge,
-                        color = Color(0xFFFFAE80), fontWeight = FontWeight.ExtraBold)
+                    Text("✦  DEIN ZUHAUSE", color = Color(0xFFFFBE96),
+                        style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                     Text("Alles im Griff.", style = MaterialTheme.typography.headlineLarge,
-                        color = Color.White, fontWeight = FontWeight.Black)
-                    Text("Einkaufen · Planen · Erledigen", color = Color(0xFFEAC8E4))
-                }
-            }
-            if (data.error.isNotBlank()) Text(data.error, color = MaterialTheme.colorScheme.error)
-        }
-        item { DashboardCard("Einkauf", "$shoppingOpen offen", "${activeShopping.count { it.bought }} bereits besorgt", Icons.Default.ShoppingBasket, onClick = { onJump(1) }) }
-        item { DashboardCard("Aufgaben", "$taskOpen zu erledigen", "${data.tasks.count { it.done }} abgeschlossen", Icons.Default.TaskAlt, onClick = { onJump(2) }) }
-        item { DashboardCard("Vorrat", "$missing Nachkäufe empfohlen", "${data.stock.size} Artikel im Vorrat", Icons.Default.Inventory2, onClick = { onJump(3) }) }
-        if (dueTasks.isNotEmpty()) item {
-            ElevatedCard(onClick = { onJump(2) }, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.NotificationsActive, "Fällige Aufgaben", tint = AccentPink)
-                        Spacer(Modifier.width(8.dp))
-                        Text("${dueTasks.size} heute fällig oder überfällig",
-                            fontWeight = FontWeight.Bold, color = AccentPink)
+                        fontWeight = FontWeight.ExtraBold, color = Color.White)
+                    Text("Einkaufen · Planen · Gemeinsam erledigen", color = Color(0xFFEEDAE7))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onJump(1) }) { Icon(Icons.Default.ShoppingCart, null); Text(" Einkauf") }
+                        OutlinedButton(onClick = { onJump(2) }) { Icon(Icons.Default.CheckCircle, null); Text(" Aufgaben") }
                     }
-                    dueTasks.take(3).forEach { task ->
-                        Text("• " + task.title +
-                            if (task.assignee == "Alle") "" else " · " + task.assignee,
-                            style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            if (data.error.isNotBlank()) Text(data.error, color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall)
+            if (data.cloud && data.syncStatus != "Synchronisiert") Text(
+                "Cloud: " + data.syncStatus, color = AccentTeal, style = MaterialTheme.typography.bodySmall)
+        }
+        order.forEach { key ->
+            if (DashboardOptions.visible(context, key)) {
+                when(key) {
+                    "shopping" -> item(key = "shopping") { DashboardCard("Einkauf", "$open offen",
+                        "${activeShopping.count { it.bought }} bereits besorgt",
+                        Icons.Default.ShoppingBasket) { onJump(1) } }
+                    "tasks" -> item(key = "tasks") { DashboardCard("Aufgaben",
+                        "${data.tasks.count { !it.done }} zu erledigen",
+                        "${data.tasks.count { it.done }} abgeschlossen", Icons.Default.TaskAlt) { onJump(2) } }
+                    "stock" -> item(key = "stock") { DashboardCard("Vorrat", "$missing Nachkäufe empfohlen",
+                        "${data.stock.size} Artikel im Vorrat", Icons.Default.Inventory2) { onJump(3) } }
+                    "today" -> if (due.isNotEmpty()) item(key = "today") {
+                        ElevatedCard(onClick = { onJump(2) }, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                Text("${due.size} Aufgaben heute oder überfällig", color = AccentPink,
+                                    fontWeight = FontWeight.Bold)
+                                due.take(3).forEach { Text("• " + it.title + " · " + it.assignee) }
+                            }
+                        }
                     }
-                    if (dueTasks.size > 3) Text("Weitere Aufgaben ansehen",
-                        color = Muted, style = MaterialTheme.typography.bodySmall)
+                    "progress" -> item(key = "progress") {
+                        ElevatedCard(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text("Einkaufsfortschritt", fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(10.dp))
+                                LinearProgressIndicator(progress = {
+                                    if (activeShopping.isEmpty()) 0f else
+                                        activeShopping.count { it.bought }.toFloat() / activeShopping.size
+                                }, modifier = Modifier.fillMaxWidth().height(8.dp), color = Mint)
+                                Text("${activeShopping.count { it.bought }} von ${activeShopping.size} Artikeln erledigt",
+                                    Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                    "meals" -> item(key = "meals") {
+                        val today = LocalDate.now().toString()
+                        val meals = data.meals.filter { it.date == today }
+                        ElevatedCard(onClick = { onJump(4) }, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text("Heute essen", fontWeight = FontWeight.Bold, color = AccentPink)
+                                Text(if (meals.isEmpty()) "Noch nichts geplant" else
+                                    meals.joinToString(" · ") { it.slot + ": " + it.title })
+                            }
+                        }
+                    }
+                    "budget" -> item(key = "budget") {
+                        ElevatedCard(onClick = { onJump(4) }, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(16.dp)) {
+                                Text("Belege diesen Monat", fontWeight = FontWeight.Bold, color = AccentTeal)
+                                Text("%.2f €".format(Locale.GERMANY, spent),
+                                    style = MaterialTheme.typography.titleLarge)
+                                Text("Monatsbudget: " + "%.2f €".format(Locale.GERMANY, data.monthlyBudget),
+                                    style = MaterialTheme.typography.bodySmall, color = Muted)
+                            }
+                        }
+                    }
                 }
             }
-        }
-        item {
-            ElevatedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(18.dp)) {
-                    Text("Einkaufsfortschritt", fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(10.dp))
-                    val progress = if (activeShopping.isEmpty()) 0f else activeShopping.count { it.bought }.toFloat() / activeShopping.size
-                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(9.dp), color = Mint)
-                    Text("${activeShopping.count { it.bought }} von ${activeShopping.size} Artikeln erledigt", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-        if (missing > 0) item {
-            Text("Bald aufgebraucht", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text(data.stock.filter { it.quantity <= it.minimum }.joinToString(" · ") { it.name }, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }
