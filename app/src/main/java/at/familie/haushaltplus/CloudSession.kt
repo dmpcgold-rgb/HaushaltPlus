@@ -237,7 +237,9 @@ class CloudStore(
                 snap?.metadata?.hasPendingWrites() == true -> "Wartet auf Sync"
                 snap?.metadata?.isFromCache == true -> "Offline verfügbar"
                 else -> "Synchronisiert"
-            })
+            }, pendingWrites = snap?.metadata?.hasPendingWrites() == true,
+            lastSyncedAt = if (snap != null && !snap.metadata.isFromCache && !snap.metadata.hasPendingWrites())
+                System.currentTimeMillis() else mutable.value.lastSyncedAt)
         }
         listeners += home.collection("tasks").addSnapshotListener { snap, e ->
             if (e != null) { setError(e); return@addSnapshotListener }
@@ -254,7 +256,8 @@ class CloudStore(
             if (e != null) { setError(e); return@addSnapshotListener }
             mutable.value = mutable.value.copy(stock = snap?.documents?.map { doc ->
                 StockItem(doc.id, doc.getString("name") ?: "", (doc.getLong("quantity") ?: 0).toInt().coerceAtLeast(0),
-                    (doc.getLong("minimum") ?: 1).toInt(), doc.getString("unit") ?: "Stk")
+                    (doc.getLong("minimum") ?: 1).toInt(), doc.getString("unit") ?: "Stk",
+                    doc.getString("expiresOn") ?: "")
             } ?: emptyList())
         }
         listeners += home.collection("meals").addSnapshotListener { snap, e ->
@@ -293,6 +296,30 @@ class CloudStore(
                         (doc.getLong("quantity") ?: 0L).toInt())
                 } ?: emptyList())
             }
+        listeners += home.collection("prices").orderBy("date", Query.Direction.DESCENDING)
+            .limit(200).addSnapshotListener { snap, e ->
+                if (e != null) { setError(e); return@addSnapshotListener }
+                mutable.value = mutable.value.copy(prices = snap?.documents?.map { d ->
+                    PriceEntry(d.id, d.getString("product") ?: "", d.getString("shop") ?: "",
+                        d.getDouble("unitPrice") ?: 0.0, d.getString("unit") ?: "Stk",
+                        d.getString("date") ?: "")
+                } ?: emptyList())
+            }
+        listeners += home.collection("checklists").addSnapshotListener { snap, e ->
+            if (e != null) { setError(e); return@addSnapshotListener }
+            mutable.value = mutable.value.copy(checklists = snap?.documents?.map { d ->
+                ChecklistTemplate(d.id, d.getString("name") ?: "",
+                    (d.get("tasks") as? List<*>)?.mapNotNull { it as? String } ?: emptyList())
+            } ?: emptyList())
+        }
+        listeners += home.collection("trash").orderBy("deletedAt", Query.Direction.DESCENDING)
+            .limit(100).addSnapshotListener { snap, e ->
+                if (e != null) { setError(e); return@addSnapshotListener }
+                mutable.value = mutable.value.copy(trash = snap?.documents?.map { d ->
+                    TrashEntry(d.id, d.getString("type") ?: "", d.getString("label") ?: "",
+                        d.getString("payload") ?: "", d.getLong("deletedAt") ?: 0L)
+                }?.filterNot(V4TrashCodec::isExpired) ?: emptyList())
+            }
         listeners += home.collection("activity").orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(40).addSnapshotListener { snapshot, error ->
                 if (error == null && snapshot != null && !snapshot.metadata.isFromCache) {
@@ -316,14 +343,11 @@ class CloudStore(
     }
     override fun addShopping(name: String, quantity: String, unit: String, category: String, price: Double, listId: String) {
         val duplicate = mutable.value.shopping.firstOrNull {
-            !it.bought && it.listId == listId && it.name.equals(name.trim(), ignoreCase = true)
-                && it.unit.equals(unit, ignoreCase = true)
+            !it.bought && it.listId == listId && it.name.equals(name.trim(), ignoreCase = true) &&
+                V4Logic.combine(it.quantity, it.unit, quantity, unit) != null
         }
-        val oldQty = duplicate?.quantity?.replace(',', '.')?.toDoubleOrNull()
-        val newQty = quantity.replace(',', '.').toDoubleOrNull()
-        if (duplicate != null && oldQty != null && newQty != null) {
-            val sum = oldQty + newQty
-            val qty = if (sum == sum.toLong().toDouble()) sum.toLong().toString() else sum.toString()
+        val qty = duplicate?.let { V4Logic.combine(it.quantity, it.unit, quantity, unit) }
+        if (duplicate != null && qty != null) {
             updateShopping(duplicate.copy(quantity = qty, price = duplicate.price + price))
             return
         }
@@ -431,7 +455,7 @@ class CloudStore(
     override fun deleteTask(item: HouseholdTask) { home.collection("tasks").document(item.id).delete().addOnFailureListener(::setError) }
     override fun addStock(name: String, quantity: Int, minimum: Int, unit: String) {
         home.collection("stock").add(mapOf("name" to name.trim(), "quantity" to quantity,
-            "minimum" to minimum, "unit" to unit, "updatedAt" to FieldValue.serverTimestamp()))
+            "minimum" to minimum, "unit" to unit, "expiresOn" to "", "updatedAt" to FieldValue.serverTimestamp()))
             .addOnSuccessListener {
                 if (quantity <= minimum) addMissingStockToShopping(name, unit)
             }.addOnFailureListener(::setError)
@@ -444,7 +468,8 @@ class CloudStore(
     override fun updateStock(item: StockItem) {
         home.collection("stock").document(item.id).update(mapOf(
             "name" to item.name, "quantity" to item.quantity, "minimum" to item.minimum,
-            "unit" to item.unit, "updatedAt" to FieldValue.serverTimestamp()
+            "unit" to item.unit, "expiresOn" to item.expiresOn,
+            "updatedAt" to FieldValue.serverTimestamp()
         )).addOnSuccessListener {
             if (item.quantity <= item.minimum) addMissingStockToShopping(item.name, item.unit)
         }.addOnFailureListener(::setError)
