@@ -15,8 +15,8 @@ android {
         applicationId = "at.familie.haushaltplus"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.3.0"
+        versionCode = 6
+        versionName = "0.4.0"
         buildConfigField("boolean", "FIREBASE_ENABLED", firebaseConfigPresent.toString())
     }
 
@@ -45,6 +45,7 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging")
     implementation("androidx.core:core:1.17.0")
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("androidx.work:work-runtime-ktx:2.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.2")
     testImplementation("junit:junit:4.13.2")
