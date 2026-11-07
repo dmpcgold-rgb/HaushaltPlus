@@ -8,7 +8,6 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.Timestamp
-import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.security.SecureRandom
@@ -264,7 +263,6 @@ class CloudStore(
                     doc.getString("title") ?: "", doc.getString("ingredients") ?: "")
             } ?: emptyList())
         }
-        registerDevice()
         listeners += home.collection("activity").orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(40).addSnapshotListener { snapshot, error ->
                 if (error == null && snapshot != null && !snapshot.metadata.isFromCache) {
@@ -272,12 +270,6 @@ class CloudStore(
                 }
             }
         FreeNotifications.schedule(context)
-    }
-    private fun registerDevice() {
-        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-            home.collection("devices").document(uid).set(mapOf("token" to token, "name" to userName,
-                "updatedAt" to FieldValue.serverTimestamp()))
-        }
     }
     private fun recordActivity(title: String, kind: String = "all") {
         home.collection("activity").add(mapOf(

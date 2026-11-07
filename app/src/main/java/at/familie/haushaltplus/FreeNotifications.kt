@@ -14,6 +14,8 @@ import androidx.work.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.Timestamp
+import java.util.Date
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.Source
 import kotlinx.coroutines.tasks.await
@@ -59,7 +61,12 @@ object FreeNotifications {
                     if (allowed && title.isNotBlank()) show(context, title)
                 }
             }
-            prefs.edit().putString(key, known.toList().takeLast(120).joinToString("|")).apply()
+            val latest = documents.mapNotNull { it.getTimestamp("createdAt")?.toDate()?.time }
+                .maxOrNull() ?: 0L
+            val cursorKey = "activity_after_" + uid + "_" + homeId
+            val cursor = prefs.getLong(cursorKey, 0L)
+            prefs.edit().putString(key, known.toList().takeLast(120).joinToString("|"))
+                .putLong(cursorKey, maxOf(cursor, latest)).apply()
         }
     }
 
@@ -115,14 +122,35 @@ class FreeNotificationWorker(context: Context, parameters: WorkerParameters) : C
         if (prefs.getString("homeUid", null) != uid) return Result.success()
         val homeId = prefs.getString("homeId", null) ?: return Result.success()
         return try {
-            val docs = FirebaseFirestore.getInstance().collection("households").document(homeId)
-                .collection("activity")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(40).get(Source.SERVER).await()
+            val db = FirebaseFirestore.getInstance()
+            val activity = db.collection("households").document(homeId).collection("activity")
+            val notificationPrefs = applicationContext.getSharedPreferences(
+                "haushalt_notifications", Context.MODE_PRIVATE
+            )
+            val lastSeen = notificationPrefs.getLong("activity_after_" + uid + "_" + homeId, 0L)
+            // Only query new activity after initial baseline, rather than re-reading
+            // dozens of already-delivered events on every periodic check.
+            val query = if (lastSeen > 0L) {
+                activity.orderBy("createdAt", Query.Direction.ASCENDING)
+                    .startAfter(Timestamp(Date(lastSeen))).limit(40)
+            } else activity.orderBy("createdAt", Query.Direction.DESCENDING).limit(40)
+            val docs = query.get(Source.SERVER).await()
             FreeNotifications.process(applicationContext, uid, homeId, docs.documents)
-            val tasks = FirebaseFirestore.getInstance().collection("households").document(homeId)
-                .collection("tasks").whereEqualTo("done", false).limit(60).get(Source.SERVER).await()
-            FreeNotifications.dueReminders(applicationContext, uid, homeId, tasks.documents)
+
+            // Task reminders only need a daily background read. The foreground
+            // task listener still handles reminders while the app is open.
+            val today = java.time.LocalDate.now().toString()
+            val dueKey = "due_checked_" + uid + "_" + homeId
+            val canNotify = android.os.Build.VERSION.SDK_INT < 33 ||
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    applicationContext, Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+            if (canNotify && notificationPrefs.getString(dueKey, null) != today) {
+                val tasks = db.collection("households").document(homeId).collection("tasks")
+                    .whereEqualTo("done", false).limit(100).get(Source.SERVER).await()
+                FreeNotifications.dueReminders(applicationContext, uid, homeId, tasks.documents)
+                notificationPrefs.edit().putString(dueKey, today).apply()
+            }
             Result.success()
         } catch (e: Exception) {
             Result.retry()
