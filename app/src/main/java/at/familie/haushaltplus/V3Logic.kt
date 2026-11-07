@@ -63,6 +63,28 @@ object V3Logic {
             } else line.trim().takeIf { it.isNotBlank() }?.let { TemplateProduct(it) }
         }
 
+    /** Combine ingredients across several recipes and subtract available matching stock. */
+    fun missingIngredients(plans: List<Pair<RecipeEntry, Int>>, stock: List<StockItem>): List<TemplateProduct> {
+        val all = plans.flatMap { (recipe, count) ->
+            recipeItems(recipe.ingredients, recipe.portions, count)
+        }
+        return all.groupBy { it.name.trim().lowercase(java.util.Locale.GERMAN) + "|" + it.unit.lowercase() }
+            .values.mapNotNull { group ->
+                val item = group.first()
+                val quantities = group.map { it.quantity.replace(',', '.').toDoubleOrNull() }
+                if (quantities.any { it == null }) return@mapNotNull item
+                val total = quantities.filterNotNull().sum()
+                val owned = stock.filter { it.name.equals(item.name, true) &&
+                    it.unit.equals(item.unit, true) }.sumOf { it.quantity }
+                val missing = (total - owned).coerceAtLeast(0.0)
+                if (missing <= 0.000001) null else {
+                    val fmt = if (missing == missing.toLong().toDouble()) missing.toLong().toString()
+                        else "%.2f".format(java.util.Locale.ROOT, missing).trimEnd('0').trimEnd('.')
+                    item.copy(quantity = fmt)
+                }
+            }
+    }
+
     fun daysRemaining(stock: StockItem, history: List<StockUsage>, today: LocalDate = LocalDate.now()): Int? {
         val week = history.filter {
             it.stockId == stock.id && it.quantity > 0 &&
