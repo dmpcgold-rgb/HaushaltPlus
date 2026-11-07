@@ -262,6 +262,8 @@ class CloudStore(
                     (doc.getLong("minimum") ?: 1).toInt(), doc.getString("unit") ?: "Stk",
                     doc.getString("expiresOn") ?: "")
             } ?: emptyList())
+            if (snap != null && !snap.metadata.isFromCache)
+                FreeNotifications.expiryReminder(context, uid, houseId, mutable.value.stock)
         }
         listeners += home.collection("meals").addSnapshotListener { snap, e ->
             if (e != null) { setError(e); return@addSnapshotListener }

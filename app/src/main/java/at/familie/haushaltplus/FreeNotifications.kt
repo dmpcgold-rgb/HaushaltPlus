@@ -39,7 +39,7 @@ object FreeNotifications {
             .setRequiredNetworkType(NetworkType.CONNECTED).setRequiresBatteryNotLow(true).build())
             .build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, work
+            WORK_NAME, ExistingPeriodicWorkPolicy.UPDATE, work
         )
     }
 
@@ -61,7 +61,7 @@ object FreeNotifications {
         val request = PeriodicWorkRequestBuilder<LocalReminderWorker>(
             if (eco) 60 else 15, TimeUnit.MINUTES).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            "haushalt_local_due", ExistingPeriodicWorkPolicy.KEEP, request
+            "haushalt_local_due", ExistingPeriodicWorkPolicy.UPDATE, request
         )
     }
 

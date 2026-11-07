@@ -367,6 +367,11 @@ private fun NotificationsSection() {
     var tasks by remember { mutableStateOf(prefs.getBoolean("notify_tasks", true)) }
     var family by remember { mutableStateOf(prefs.getBoolean("notify_family", true)) }
     var due by remember { mutableStateOf(prefs.getBoolean("notify_due", true)) }
+    var expiry by remember { mutableStateOf(prefs.getBoolean("notify_expiry", true)) }
+    var eco by remember { mutableStateOf(prefs.getBoolean("eco_mode", true)) }
+    var daysBeforeExpiry by remember {
+        mutableIntStateOf(prefs.getInt("expiry_before_days", 3))
+    }
     var quiet by remember { mutableStateOf(prefs.getBoolean("quiet_enabled", true)) }
     var summary by remember { mutableStateOf(prefs.getBoolean("notify_summary", true)) }
     var before by remember { mutableIntStateOf(prefs.getInt("notify_before_days", 1)) }
@@ -402,6 +407,25 @@ private fun NotificationsSection() {
     }
     SettingToggle("Fällige Aufgaben", "Erinnerung am Tag der Fälligkeit", due) {
         due = it; prefs.edit().putBoolean("notify_due", it).apply()
+    }
+    SettingToggle("Mindesthaltbarkeitsdatum", "Lebensmittel vor Ablauf erinnern", expiry) {
+        expiry = it; prefs.edit().putBoolean("notify_expiry", it).apply()
+    }
+    if (expiry) {
+        Text("MHD-Erinnerung vorher", fontWeight = FontWeight.Bold)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            listOf(0, 1, 3, 5, 7, 14).forEach { n ->
+                FilterChip(selected = daysBeforeExpiry == n, onClick = {
+                    daysBeforeExpiry = n; prefs.edit().putInt("expiry_before_days", n).apply()
+                }, label = { Text(if (n == 0) "Am Tag" else "$n Tage") })
+            }
+        }
+    }
+    SettingToggle("Akku sparen", "Hintergrundchecks ca. stündlich statt alle 15 Minuten", eco) {
+        eco = it
+        prefs.edit().putBoolean("eco_mode", it).apply()
+        if (BuildConfig.FIREBASE_ENABLED) FreeNotifications.schedule(context)
+        else FreeNotifications.scheduleLocal(context)
     }
     SettingToggle("Änderungen zusammenfassen", "Mehrere Meldungen in einer Benachrichtigung", summary) {
         summary = it; prefs.edit().putBoolean("notify_summary", it).apply()
