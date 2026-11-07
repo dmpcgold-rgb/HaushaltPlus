@@ -375,13 +375,23 @@ class CloudStore(
     override fun deleteTask(item: HouseholdTask) { home.collection("tasks").document(item.id).delete().addOnFailureListener(::setError) }
     override fun addStock(name: String, quantity: Int, minimum: Int, unit: String) {
         home.collection("stock").add(mapOf("name" to name.trim(), "quantity" to quantity,
-            "minimum" to minimum, "unit" to unit, "updatedAt" to FieldValue.serverTimestamp())).addOnFailureListener(::setError)
+            "minimum" to minimum, "unit" to unit, "updatedAt" to FieldValue.serverTimestamp()))
+            .addOnSuccessListener {
+                if (quantity <= minimum) addMissingStockToShopping(name, unit)
+            }.addOnFailureListener(::setError)
+    }
+    private fun addMissingStockToShopping(name: String, unit: String) {
+        if (mutable.value.shopping.none { !it.bought && it.name.equals(name.trim(), ignoreCase = true) }) {
+            addShopping(name, "1", unit, "Vorrat", 0.0, "standard")
+        }
     }
     override fun updateStock(item: StockItem) {
         home.collection("stock").document(item.id).update(mapOf(
             "name" to item.name, "quantity" to item.quantity, "minimum" to item.minimum,
             "unit" to item.unit, "updatedAt" to FieldValue.serverTimestamp()
-        )).addOnFailureListener(::setError)
+        )).addOnSuccessListener {
+            if (item.quantity <= item.minimum) addMissingStockToShopping(item.name, item.unit)
+        }.addOnFailureListener(::setError)
     }
     override fun changeStock(item: StockItem, amount: Int) {
         val ref = home.collection("stock").document(item.id)
@@ -392,9 +402,8 @@ class CloudStore(
             tx.update(ref, mapOf("quantity" to next, "updatedAt" to FieldValue.serverTimestamp()))
             current to next
         }.addOnSuccessListener { (before, after) ->
-            if (before > item.minimum && after <= item.minimum &&
-                mutable.value.shopping.none { !it.bought && it.name.equals(item.name, ignoreCase = true) }) {
-                addShopping(item.name, "1", item.unit, "Vorrat", 0.0, "standard")
+            if (before > item.minimum && after <= item.minimum) {
+                addMissingStockToShopping(item.name, item.unit)
             }
         }.addOnFailureListener(::setError)
     }

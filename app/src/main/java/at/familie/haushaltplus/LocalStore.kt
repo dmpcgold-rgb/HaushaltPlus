@@ -162,9 +162,25 @@ class LocalStore(private val context: Context) : HouseholdStore {
     override fun deleteTask(item: HouseholdTask) =
         mutate { it.copy(tasks = it.tasks.filterNot { t -> t.id == item.id }) }
     override fun addStock(name: String, quantity: Int, minimum: Int, unit: String) =
-        mutate { it.copy(stock = it.stock + StockItem(id(), name.trim(), quantity, minimum, unit)) }
+        mutate { h ->
+            val need = quantity <= minimum &&
+                h.shopping.none { !it.bought && it.name.equals(name.trim(), ignoreCase = true) }
+            h.copy(
+                stock = h.stock + StockItem(id(), name.trim(), quantity, minimum, unit),
+                shopping = if (need) h.shopping + ShoppingItem(id(), name.trim(), "1", unit, "Vorrat")
+                    else h.shopping
+            )
+        }
     override fun updateStock(item: StockItem) =
-        mutate { h -> h.copy(stock = h.stock.map { if(it.id == item.id) item else it }) }
+        mutate { h ->
+            val need = item.quantity <= item.minimum &&
+                h.shopping.none { !it.bought && it.name.equals(item.name, ignoreCase = true) }
+            h.copy(
+                stock = h.stock.map { if(it.id == item.id) item else it },
+                shopping = if (need) h.shopping + ShoppingItem(id(), item.name, "1", item.unit, "Vorrat")
+                    else h.shopping
+            )
+        }
     override fun changeStock(item: StockItem, amount: Int) = mutate { h ->
         val newQuantity = (item.quantity + amount).coerceAtLeast(0)
         val newlyLow = item.quantity > item.minimum && newQuantity <= item.minimum
