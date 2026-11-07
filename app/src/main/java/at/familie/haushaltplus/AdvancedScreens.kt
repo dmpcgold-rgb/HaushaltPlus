@@ -87,6 +87,12 @@ fun ExtrasPage(
                 Text("Gemeinsam planen, einkaufen und organisieren.", color = Muted)
                 Spacer(Modifier.height(2.dp))
                 ExtraTile(Icons.Default.Restaurant, "Essensplan", "Mahlzeiten und Zutaten für die Woche", Pink) { section = "meals" }
+                ExtraTile(Icons.Default.Bookmarks, "Einkaufsvorlagen", "Listen für regelmäßige Einkäufe", Neon) { section = "templates" }
+                ExtraTile(Icons.Default.ReceiptLong, "Kassenbelege", "Beträge und Geschäfte vergleichen", Teal) { section = "receipts" }
+                ExtraTile(Icons.Default.MenuBook, "Rezeptbuch", "Portionen umrechnen und Zutaten einkaufen", Pink) { section = "recipes" }
+                ExtraTile(Icons.Default.CalendarMonth, "Familienkalender", "Woche und Monat gemeinsam planen", Blue) { section = "calendar" }
+                ExtraTile(Icons.Default.History, "Aktivitätsverlauf", "Änderungen in der Familie nachvollziehen", Teal) { section = "activity" }
+                ExtraTile(Icons.Default.DashboardCustomize, "Startseite gestalten", "Kacheln sortieren und ausblenden", Neon) { section = "dashboard" }
                 ExtraTile(Icons.Default.Paid, "Budget & Ausgaben", "Einkäufe und Monatslimit überblicken", Teal) { section = "budget" }
                 ExtraTile(Icons.Default.People, "Familie & Einladungen", "Haushaltsmitglieder und Freigaben", Blue) { section = "family" }
                 ExtraTile(Icons.Default.NotificationsActive, "Benachrichtigungen", "Einkäufe und Aufgaben auswählen", Neon) { section = "notifications" }
@@ -113,6 +119,8 @@ fun ExtrasPage(
                 Text("Import ergänzt fehlende Artikel und Aufgaben, statt vorhandene Daten zu löschen. Erledigtstatus und ursprüngliche Listen-IDs werden bei einem Import in einen anderen Haushalt nicht übertragen.", color = Muted, style = MaterialTheme.typography.bodySmall)
             }
             "account" -> AccountSection(data, session)
+            "templates", "receipts", "recipes", "calendar", "activity", "dashboard" ->
+                V3FeaturesPage(data, store, section)
         }
         if (status.isNotBlank()) Text(status, color = Teal)
         Spacer(Modifier.height(90.dp))
