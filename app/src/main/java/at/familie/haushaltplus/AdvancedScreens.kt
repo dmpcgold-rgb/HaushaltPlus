@@ -367,6 +367,11 @@ private fun NotificationsSection() {
     var tasks by remember { mutableStateOf(prefs.getBoolean("notify_tasks", true)) }
     var family by remember { mutableStateOf(prefs.getBoolean("notify_family", true)) }
     var due by remember { mutableStateOf(prefs.getBoolean("notify_due", true)) }
+    var quiet by remember { mutableStateOf(prefs.getBoolean("quiet_enabled", true)) }
+    var summary by remember { mutableStateOf(prefs.getBoolean("notify_summary", true)) }
+    var before by remember { mutableIntStateOf(prefs.getInt("notify_before_days", 1)) }
+    var from by remember { mutableStateOf(prefs.getString("quiet_start", "22:00") ?: "22:00") }
+    var until by remember { mutableStateOf(prefs.getString("quiet_end", "07:00") ?: "07:00") }
     SectionTitle("Benachrichtigungen", "Du entscheidest, wofür dein Handy klingelt.")
     if (!permissionGranted) {
         ElevatedCard(shape = RoundedCornerShape(17.dp)) {
@@ -398,7 +403,34 @@ private fun NotificationsSection() {
     SettingToggle("Fällige Aufgaben", "Erinnerung am Tag der Fälligkeit", due) {
         due = it; prefs.edit().putBoolean("notify_due", it).apply()
     }
-    Text("Im Vordergrund erscheinen Änderungen zeitnah. Bei geschlossener App prüft Android sie ungefähr alle 15 Minuten oder später – keine sofortige Server-Push-Zustellung und kein kostenpflichtiger Tarif.", color = Muted, style = MaterialTheme.typography.bodySmall)
+    SettingToggle("Änderungen zusammenfassen", "Mehrere Meldungen in einer Benachrichtigung", summary) {
+        summary = it; prefs.edit().putBoolean("notify_summary", it).apply()
+    }
+    SettingToggle("Ruhezeiten", "Währenddessen keine neuen Meldungen", quiet) {
+        quiet = it; prefs.edit().putBoolean("quiet_enabled", it).apply()
+    }
+    if (quiet) {
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            OutlinedTextField(from, { from = it.take(5) }, modifier = Modifier.weight(1f),
+                label = { Text("Von (HH:mm)") }, singleLine = true)
+            OutlinedTextField(until, { until = it.take(5) }, modifier = Modifier.weight(1f),
+                label = { Text("Bis (HH:mm)") }, singleLine = true)
+        }
+        TextButton(enabled = runCatching { java.time.LocalTime.parse(from) }.isSuccess &&
+            runCatching { java.time.LocalTime.parse(until) }.isSuccess, onClick = {
+            prefs.edit().putString("quiet_start", from).putString("quiet_end", until).apply()
+        }) { Text("Ruhezeiten speichern") }
+    }
+    Text("Aufgaben vor der Fälligkeit erinnern", fontWeight = FontWeight.Bold)
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        listOf(0, 1, 2, 3, 7).forEach { d ->
+            FilterChip(selected = before == d, onClick = {
+                before = d; prefs.edit().putInt("notify_before_days", d).apply()
+            }, label = { Text(if(d == 0) "Am Tag" else "$d Tage") })
+        }
+    }
+    Text("Benachrichtigungen führen direkt zur passenden Aufgaben- oder Einkaufsansicht. Bei geschlossener App prüft Android ungefähr alle 15 Minuten oder später; sofortige Push-Zustellung ist nicht garantiert.",
+        color = Muted, style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable

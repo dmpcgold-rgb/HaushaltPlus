@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         requestedTab = intent?.getIntExtra("open_tab", 0) ?: 0
         val local = LocalStore(this)
+        if (!BuildConfig.FIREBASE_ENABLED) FreeNotifications.scheduleLocal(this)
         val cloud = if (BuildConfig.FIREBASE_ENABLED) CloudSession(this) else null
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(
