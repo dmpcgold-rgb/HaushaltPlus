@@ -305,8 +305,7 @@ private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJ
 
 @Composable
 private fun DashboardCard(title: String, value: String, caption: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp), border = BorderStroke(1.dp, Color(0xFF39303B))) {
+    ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
         Row(Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(14.dp), color = when(title) {
                 "Einkauf" -> Color(0xFF42261B)

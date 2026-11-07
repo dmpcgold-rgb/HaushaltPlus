@@ -126,8 +126,7 @@ fun ExtrasPage(
 
 @Composable
 private fun ExtraTile(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, tint: Color, onClick: () -> Unit) {
-    ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(1.dp, tint.copy(alpha = 0.32f))) {
+    ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(15.dp), color = tint.copy(alpha = 0.18f)) {
                 Icon(icon, null, modifier = Modifier.padding(13.dp).size(24.dp), tint = tint)
@@ -155,7 +154,7 @@ private fun MealsSection(data: HouseholdData, store: HouseholdStore) {
     SectionTitle("Unser Essensplan", "Sieben Tage gemeinsam planen")
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         (0..6).forEach { offset ->
-            val date = LocalDate.now().plusDays(offset).toString()
+            val date = LocalDate.now().plusDays(offset.toLong()).toString()
             FilterChip(selected = date == day, onClick = { day = date },
                 label = { Text(if (offset == 0) "Heute" else LocalDate.parse(date).format(DateTimeFormatter.ofPattern("EEE dd.MM", Locale.GERMAN))) },
                 colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Neon, selectedLabelColor = Color.Black))
@@ -214,8 +213,7 @@ private fun BudgetSection(data: HouseholdData, store: HouseholdStore) {
     val number = java.text.NumberFormat.getCurrencyInstance(Locale.GERMANY)
     var editing by remember { mutableStateOf(false) }
     SectionTitle("Haushaltsbudget", "Ausgaben im laufenden Monat")
-    ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(1.dp, Teal.copy(alpha = 0.45f))) {
+    ElevatedCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             Text("DIESEN MONAT", color = Teal, fontWeight = FontWeight.Bold)
             Text(number.format(spent), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black)
