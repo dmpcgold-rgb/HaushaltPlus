@@ -49,16 +49,21 @@ fun ExtrasPage(
     var imported by remember { mutableStateOf<String?>(null) }
     val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if (uri != null) try {
-            context.contentResolver.openOutputStream(uri)?.use {
-                it.write(BackupCodec.encode(data).toByteArray(Charsets.UTF_8))
-            }
-            status = "Backup auf deinem Gerät gespeichert"
+            val stream = context.contentResolver.openOutputStream(uri)
+                ?: throw java.io.IOException("Speicherort ist nicht beschreibbar")
+            stream.use { it.write(BackupCodec.encode(data).toByteArray(Charsets.UTF_8)) }
+            status = "Backup erfolgreich gespeichert"
         } catch (e: Exception) { status = e.localizedMessage ?: "Speichern fehlgeschlagen" }
     }
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) try {
-            imported = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText().take(2_000_000) }
-            if (imported == null) status = "Datei konnte nicht gelesen werden"
+            val stream = context.contentResolver.openInputStream(uri)
+                ?: throw java.io.IOException("Datei konnte nicht gelesen werden")
+            val text = stream.bufferedReader().use { it.readText().take(2_000_001) }
+            if (text.length > 2_000_000) {
+                imported = null
+                status = "Sicherung ist zu groß (maximal 2 MB)"
+            } else imported = text
         } catch (e: Exception) { status = e.localizedMessage ?: "Datei konnte nicht gelesen werden" }
     }
 
@@ -91,7 +96,7 @@ fun ExtrasPage(
             "backup" -> {
                 SectionTitle("Datensicherung", "Dateien bleiben in deinem ausgewählten Speicherort.")
                 Text("Export enthält Listen, Einkäufe, Aufgaben, Vorräte, Mahlzeiten und Budget. Keine Passwörter.", color = Muted)
-                Button(onClick = { saveFile.launch("HaushaltPlus-Sicherung.json") }, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = { saveFile.launch("HaushaltPlus-" + LocalDate.now() + ".json") }, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Download, null)
                     Spacer(Modifier.width(8.dp))
                     Text("Sicherung exportieren")
@@ -209,6 +214,10 @@ private fun BudgetSection(data: HouseholdData, store: HouseholdStore) {
     val month = YearMonth.now().toString()
     val bought = data.shopping.filter { it.bought && it.boughtAt.startsWith(month) }
     val spent = bought.sumOf { it.price }
+    val categories = bought.filter { it.price > 0.0 }.groupBy { it.category }
+        .mapValues { (_, items) -> items.sumOf { it.price } }
+        .toList().sortedByDescending { it.second }
+    val withoutPrice = bought.count { it.price <= 0.0 }
     val budget = data.monthlyBudget
     val number = java.text.NumberFormat.getCurrencyInstance(Locale.GERMANY)
     var editing by remember { mutableStateOf(false) }
@@ -227,6 +236,21 @@ private fun BudgetSection(data: HouseholdData, store: HouseholdStore) {
             OutlinedButton(onClick = { editing = true }) { Text("Monatsbudget festlegen") }
         }
     }
+    Text("Ausgaben nach Kategorie", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+    if (categories.isEmpty()) Text("Sobald du Preise einträgst, siehst du hier deine Ausgaben nach Kategorien.", color = Muted)
+    categories.forEach { (name, sum) ->
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(number.format(sum), color = Teal, fontWeight = FontWeight.SemiBold)
+        }
+        LinearProgressIndicator(
+            progress = { if (spent > 0.0) (sum / spent).toFloat().coerceIn(0f, 1f) else 0f },
+            color = Neon, modifier = Modifier.fillMaxWidth().height(5.dp)
+        )
+    }
+    if (withoutPrice > 0) Text("$withoutPrice gekaufte Artikel ohne Preis werden nicht in der Summe berücksichtigt.",
+        color = Muted, style = MaterialTheme.typography.bodySmall)
+    HorizontalDivider(color = Color(0xFF32333B))
     Text("Gebuchte Einkäufe", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
     if (bought.isEmpty()) Text("Noch keine Einkäufe mit Datum in diesem Monat.", color = Muted)
     bought.sortedByDescending { it.boughtAt }.forEach {
