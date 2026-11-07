@@ -537,8 +537,8 @@ private fun PickOne(label: String, options: List<String>, choice: String, change
 }
 
 @Composable
-private fun AddShoppingDialog(onDismiss: () -> Unit, onAdd: (String, String, String, String, Double) -> Unit) {
-    var name by remember { mutableStateOf("") }
+private fun AddShoppingDialog(initialName: String = "", onDismiss: () -> Unit, onAdd: (String, String, String, String, Double) -> Unit) {
+    var name by remember(initialName) { mutableStateOf(initialName) }
     var qty by remember { mutableStateOf("1") }
     var unit by remember { mutableStateOf("Stk") }
     var category by remember { mutableStateOf("Lebensmittel") }
@@ -561,21 +561,26 @@ private fun AddShoppingDialog(onDismiss: () -> Unit, onAdd: (String, String, Str
 }
 
 @Composable
-private fun AddTaskDialog(data: HouseholdData, onDismiss: () -> Unit, onAdd: (String, String, String, String) -> Unit) {
+private fun AddTaskDialog(data: HouseholdData, onDismiss: () -> Unit, onAdd: (String, String, String, String, Boolean) -> Unit) {
     var title by remember { mutableStateOf("") }
     var assignee by remember { mutableStateOf("Alle") }
     var due by remember { mutableStateOf("Ohne Termin") }
     var repeat by remember { mutableStateOf("Nie") }
+    var rotate by remember { mutableStateOf(false) }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Aufgabe erstellen") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(title, { title = it }, label = { Text("Was ist zu tun?") }, singleLine = true)
             PickOne("Zuständig", listOf("Alle") + data.members.map { it.name }.distinct(), assignee) { assignee = it }
             PickOne("Fällig", listOf("Ohne Termin", "Heute", "Morgen", "In 7 Tagen"), due) { due = it }
             PickOne("Rhythmus", listOf("Nie", "Täglich", "Wöchentlich", "Monatlich"), repeat) { repeat = it }
+            if (repeat != "Nie") Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(rotate, { rotate = it })
+                Text("Zuständigkeit abwechseln", style = MaterialTheme.typography.bodySmall)
+            }
         } }, confirmButton = { TextButton(enabled = title.isNotBlank(), onClick = {
             val day = when(due) { "Heute" -> LocalDate.now(); "Morgen" -> LocalDate.now().plusDays(1)
                 "In 7 Tagen" -> LocalDate.now().plusDays(7); else -> null }
-            onAdd(title.trim(), assignee, day?.toString() ?: "", repeat)
+            onAdd(title.trim(), assignee, day?.toString() ?: "", repeat, rotate)
         }) { Text("Erstellen") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } })
 }
 
@@ -594,4 +599,70 @@ private fun AddStockDialog(onDismiss: () -> Unit, onAdd: (String, Int, Int, Stri
         } }, confirmButton = { TextButton(enabled = name.isNotBlank() && qty.toIntOrNull() != null && min.toIntOrNull() != null, onClick = {
             onAdd(name.trim(), (qty.toIntOrNull() ?: 0).coerceAtLeast(0), (min.toIntOrNull() ?: 1).coerceAtLeast(0), unit.ifBlank { "Stk" })
         }) { Text("Speichern") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } })
+}
+
+@Composable
+private fun EditShoppingDialog(item: ShoppingItem, onDismiss: () -> Unit, onSave: (ShoppingItem) -> Unit) {
+    var name by remember(item.id) { mutableStateOf(item.name) }
+    var quantity by remember(item.id) { mutableStateOf(item.quantity) }
+    var unit by remember(item.id) { mutableStateOf(item.unit) }
+    var category by remember(item.id) { mutableStateOf(item.category) }
+    var price by remember(item.id) { mutableStateOf(item.price.toString()) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Artikel bearbeiten") },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            OutlinedTextField(name, { name = it }, label = { Text("Artikelname") }, singleLine = true)
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                OutlinedTextField(quantity, { quantity = it }, modifier = Modifier.weight(1f), label = { Text("Menge") })
+                OutlinedTextField(unit, { unit = it }, modifier = Modifier.weight(1f), label = { Text("Einheit") })
+            }
+            PickOne("Kategorie", listOf("Lebensmittel", "Obst & Gemüse", "Getränke", "Drogerie", "Haushalt", "Vorrat", "Sonstiges"), category) { category = it }
+            OutlinedTextField(price, { price = it }, label = { Text("Tatsächlicher / geplanter Gesamtpreis €") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+        } },
+        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = {
+            onSave(item.copy(name = name.trim(), quantity = quantity.ifBlank { "1" }, unit = unit.ifBlank { "Stk" },
+                category = category, price = (price.replace(',', '.').toDoubleOrNull() ?: 0.0).coerceAtLeast(0.0)))
+        }) { Text("Speichern") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } })
+}
+
+@Composable
+private fun EditTaskDialog(task: HouseholdTask, data: HouseholdData, onDismiss: () -> Unit, onSave: (HouseholdTask) -> Unit) {
+    var title by remember(task.id) { mutableStateOf(task.title) }
+    var assignee by remember(task.id) { mutableStateOf(task.assignee) }
+    var due by remember(task.id) { mutableStateOf(task.due) }
+    var repeat by remember(task.id) { mutableStateOf(task.repeat) }
+    var rotate by remember(task.id) { mutableStateOf(task.rotate) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Aufgabe bearbeiten") },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            OutlinedTextField(title, { title = it }, label = { Text("Aufgabe") })
+            PickOne("Zuständig", listOf("Alle") + data.members.map { it.name }.distinct(), assignee) { assignee = it }
+            OutlinedTextField(due, { due = it }, label = { Text("Datum (JJJJ-MM-TT), optional") }, singleLine = true)
+            PickOne("Rhythmus", listOf("Nie", "Täglich", "Wöchentlich", "Monatlich"), repeat) { repeat = it }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(rotate, { rotate = it }); Text("Zuständigkeit rotieren")
+            }
+        } },
+        confirmButton = { TextButton(enabled = title.isNotBlank() && (due.isBlank() || runCatching { LocalDate.parse(due) }.isSuccess),
+            onClick = { onSave(task.copy(title = title.trim(), assignee = assignee, due = due, repeat = repeat, rotate = rotate)) }) { Text("Speichern") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } })
+}
+
+@Composable
+private fun EditStockDialog(item: StockItem, onDismiss: () -> Unit, onSave: (StockItem) -> Unit) {
+    var name by remember(item.id) { mutableStateOf(item.name) }
+    var qty by remember(item.id) { mutableStateOf(item.quantity.toString()) }
+    var min by remember(item.id) { mutableStateOf(item.minimum.toString()) }
+    var unit by remember(item.id) { mutableStateOf(item.unit) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Vorrat bearbeiten") },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            OutlinedTextField(name, { name = it }, label = { Text("Artikelname") })
+            OutlinedTextField(qty, { qty = it }, label = { Text("Bestand") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            OutlinedTextField(min, { min = it }, label = { Text("Mindestbestand") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+            OutlinedTextField(unit, { unit = it }, label = { Text("Einheit") })
+        } },
+        confirmButton = { TextButton(enabled = name.isNotBlank() && qty.toIntOrNull() != null && min.toIntOrNull() != null,
+            onClick = { onSave(item.copy(name = name.trim(), quantity = (qty.toIntOrNull() ?: 0).coerceAtLeast(0),
+                minimum = (min.toIntOrNull() ?: 0).coerceAtLeast(0), unit = unit)) }) { Text("Speichern") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Abbrechen") } })
 }
