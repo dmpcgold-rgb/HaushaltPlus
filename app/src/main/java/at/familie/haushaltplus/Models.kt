@@ -22,6 +22,19 @@ data class MealEntry(
     val id: String = "", val date: String = "", val slot: String = "Abendessen",
     val title: String = "", val ingredients: String = ""
 )
+data class TemplateProduct(val name: String = "", val quantity: String = "1",
+    val unit: String = "Stk", val category: String = "Lebensmittel")
+data class ShoppingTemplate(val id: String = "", val name: String = "",
+    val items: List<TemplateProduct> = emptyList())
+data class ReceiptEntry(val id: String = "", val merchant: String = "",
+    val date: String = "", val total: Double = 0.0, val note: String = "")
+data class RecipeEntry(val id: String = "", val name: String = "",
+    val portions: Int = 2, val ingredients: String = "")
+data class StockUsage(val id: String = "", val stockId: String = "",
+    val date: String = "", val quantity: Int = 0)
+data class ActivityEntry(val id: String = "", val actor: String = "", val title: String = "",
+    val kind: String = "", val createdAt: Long = 0L)
+
 data class Member(val uid: String = "", val name: String = "")
 data class HouseholdData(
     val id: String = "", val name: String = "Mein Haushalt", val ownName: String = "Ich",
@@ -31,7 +44,10 @@ data class HouseholdData(
     val stock: List<StockItem> = emptyList(), val cloud: Boolean = false,
     val loading: Boolean = false, val error: String = "",
     val meals: List<MealEntry> = emptyList(), val monthlyBudget: Double = 0.0,
-    val ownerUid: String = "", val syncStatus: String = "Lokal", val ownUid: String = ""
+    val ownerUid: String = "", val syncStatus: String = "Lokal", val ownUid: String = "",
+    val templates: List<ShoppingTemplate> = emptyList(), val receipts: List<ReceiptEntry> = emptyList(),
+    val recipes: List<RecipeEntry> = emptyList(), val stockUsage: List<StockUsage> = emptyList(),
+    val activity: List<ActivityEntry> = emptyList()
 )
 
 interface HouseholdStore {
@@ -57,6 +73,12 @@ interface HouseholdStore {
     fun removeMember(uid: String)
     fun transferOwnership(uid: String, reply: (String) -> Unit)
     fun revokeInvite(code: String, reply: (String) -> Unit)
+    fun saveTemplate(name: String, products: List<TemplateProduct>)
+    fun deleteTemplate(template: ShoppingTemplate)
+    fun addReceipt(merchant: String, date: String, total: Double, note: String)
+    fun deleteReceipt(item: ReceiptEntry)
+    fun addRecipe(name: String, portions: Int, ingredients: String)
+    fun deleteRecipe(item: RecipeEntry)
     fun createInvite(reply: (String) -> Unit)
     fun close() {}
 }
