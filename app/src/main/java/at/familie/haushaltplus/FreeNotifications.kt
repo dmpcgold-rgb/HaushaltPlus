@@ -31,8 +31,12 @@ object FreeNotifications {
     private const val CHANNEL = "haushalt_familie"
 
     fun schedule(context: Context) {
-        val work = PeriodicWorkRequestBuilder<FreeNotificationWorker>(15, TimeUnit.MINUTES)
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+        val eco = context.getSharedPreferences("haushalt_notifications", Context.MODE_PRIVATE)
+            .getBoolean("eco_mode", true)
+        val work = PeriodicWorkRequestBuilder<FreeNotificationWorker>(
+            if (eco) 60 else 15, TimeUnit.MINUTES
+        ).setConstraints(Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED).setRequiresBatteryNotLow(true).build())
             .build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, work
@@ -52,7 +56,10 @@ object FreeNotifications {
     }
 
     fun scheduleLocal(context: Context) {
-        val request = PeriodicWorkRequestBuilder<LocalReminderWorker>(15, TimeUnit.MINUTES).build()
+        val eco = context.getSharedPreferences("haushalt_notifications", Context.MODE_PRIVATE)
+            .getBoolean("eco_mode", true)
+        val request = PeriodicWorkRequestBuilder<LocalReminderWorker>(
+            if (eco) 60 else 15, TimeUnit.MINUTES).build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             "haushalt_local_due", ExistingPeriodicWorkPolicy.KEEP, request
         )
@@ -146,6 +153,36 @@ object FreeNotifications {
             .map { it.id to (it.title to it.due) })
     }
 
+    fun expiryReminder(context: Context, uid: String, homeId: String,
+        stock: List<StockItem>) {
+        val prefs = context.getSharedPreferences("haushalt_notifications", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("notify_expiry", true) || quietHours(context)) return
+        val before = prefs.getInt("expiry_before_days", 3).coerceIn(0, 14)
+        val today = java.time.LocalDate.now()
+        synchronized(lock) {
+            val candidates = stock.mapNotNull { item ->
+                if (item.quantity <= 0) return@mapNotNull null
+                val due = V4Logic.expiryDays(item, today) ?: return@mapNotNull null
+                if (due > before) return@mapNotNull null
+                val key = "expiry_" + uid + "_" + homeId + "_" + today + "_" + item.id
+                if (prefs.getBoolean(key, false)) null else key to (
+                    if (due < 0) item.name + ": MHD überschritten"
+                    else if (due == 0L) item.name + ": MHD heute"
+                    else item.name + ": MHD in " + due + " Tagen")
+            }
+            if (candidates.isEmpty()) return
+            if (candidates.size > 1 && prefs.getBoolean("notify_summary", true)) {
+                if (show(context, candidates.size.toString() + " Vorräte mit nahem MHD", 3)) {
+                    val edit = prefs.edit()
+                    candidates.forEach { edit.putBoolean(it.first, true) }
+                    edit.apply()
+                }
+            } else candidates.take(10).forEach { (key, message) ->
+                if (show(context, message, 3)) prefs.edit().putBoolean(key, true).apply()
+            }
+        }
+    }
+
     private fun show(context: Context, description: String, openTab: Int = 0): Boolean {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -210,6 +247,13 @@ class FreeNotificationWorker(context: Context, parameters: WorkerParameters) : C
                 val tasks = db.collection("households").document(homeId).collection("tasks")
                     .whereEqualTo("done", false).limit(100).get(Source.SERVER).await()
                 FreeNotifications.dueReminders(applicationContext, uid, homeId, tasks.documents)
+                val stock = db.collection("households").document(homeId).collection("stock")
+                    .limit(100).get(Source.SERVER).await()
+                FreeNotifications.expiryReminder(applicationContext, uid, homeId, stock.documents.map { d ->
+                    StockItem(d.id, d.getString("name") ?: "",
+                        (d.getLong("quantity") ?: 0L).toInt(), (d.getLong("minimum") ?: 1L).toInt(),
+                        d.getString("unit") ?: "Stk", d.getString("expiresOn") ?: "")
+                })
                 notificationPrefs.edit().putString(dueKey, today).apply()
             }
             Result.success()
@@ -224,8 +268,9 @@ class LocalReminderWorker(context: Context, parameters: WorkerParameters) : Coro
         if (BuildConfig.FIREBASE_ENABLED || FreeNotifications.quietHours(applicationContext))
             return Result.success()
         return try {
-            FreeNotifications.localDueReminders(applicationContext,
-                LocalStore(applicationContext).data.value.tasks)
+            val data = LocalStore(applicationContext).data.value
+            FreeNotifications.localDueReminders(applicationContext, data.tasks)
+            FreeNotifications.expiryReminder(applicationContext, "local", "local", data.stock)
             Result.success()
         } catch (_: Exception) { Result.retry() }
     }
