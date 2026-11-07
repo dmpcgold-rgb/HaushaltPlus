@@ -210,7 +210,7 @@ class CloudStore(
             if (e != null) { setError(e); return@addSnapshotListener }
             mutable.value = mutable.value.copy(lists = listOf(ShoppingList()) + (snap?.documents?.map { ShoppingList(it.id, it.getString("name") ?: "Liste") } ?: emptyList()))
         }
-        listeners += home.collection("shoppingItems").addSnapshotListener { snap, e ->
+        listeners += home.collection("shoppingItems").addSnapshotListener(com.google.firebase.firestore.MetadataChanges.INCLUDE) { snap, e ->
             if (e != null) { setError(e); return@addSnapshotListener }
             mutable.value = mutable.value.copy(shopping = snap?.documents?.map { doc ->
                 ShoppingItem(doc.id, doc.getString("name") ?: "", doc.getString("quantity") ?: "1",
