@@ -1,6 +1,10 @@
 package at.familie.haushaltplus
 
 import android.content.Intent
+import android.Manifest
+import android.os.Build
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -343,11 +347,37 @@ private fun FamilySection(data: HouseholdData, store: HouseholdStore) {
 private fun NotificationsSection() {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences("haushalt_notifications", android.content.Context.MODE_PRIVATE) }
+    var permissionGranted by remember {
+        mutableStateOf(Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED)
+    }
+    val requestPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        permissionGranted = it
+    }
     var shopping by remember { mutableStateOf(prefs.getBoolean("notify_shopping", true)) }
     var tasks by remember { mutableStateOf(prefs.getBoolean("notify_tasks", true)) }
     var family by remember { mutableStateOf(prefs.getBoolean("notify_family", true)) }
     var due by remember { mutableStateOf(prefs.getBoolean("notify_due", true)) }
     SectionTitle("Benachrichtigungen", "Du entscheidest, wofür dein Handy klingelt.")
+    if (!permissionGranted) {
+        ElevatedCard(shape = RoundedCornerShape(17.dp)) {
+            Column(Modifier.fillMaxWidth().padding(15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Meldungen noch nicht freigegeben", fontWeight = FontWeight.Bold, color = Neon)
+                Text("Damit neue Einkäufe und fällige Aufgaben als Handy-Benachrichtigung erscheinen, " +
+                    "muss Android die Erlaubnis erhalten. Deine Listen funktionieren auch ohne diese Berechtigung.",
+                    style = MaterialTheme.typography.bodySmall, color = Muted)
+                Button(onClick = {
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        requestPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else permissionGranted = true
+                }) { Text("Benachrichtigungen erlauben") }
+            }
+        }
+    } else {
+        Text("Handy-Benachrichtigungen erlaubt", color = Teal,
+            style = MaterialTheme.typography.bodySmall)
+    }
     SettingToggle("Einkaufsliste", "Neue und erledigte Produkte", shopping) {
         shopping = it; prefs.edit().putBoolean("notify_shopping", it).apply()
     }
