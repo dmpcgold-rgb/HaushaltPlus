@@ -662,7 +662,7 @@ class CloudStore(
             batch.set(doc, data)
             batch.delete(home.collection("trash").document(item.id))
             batch.commit().addOnFailureListener(::setError)
-        }.onFailure(::setError)
+        }.onFailure { setError(Exception(it)) }
     }
     override fun purgeTrash(item: TrashEntry) {
         home.collection("trash").document(item.id).delete().addOnFailureListener(::setError)

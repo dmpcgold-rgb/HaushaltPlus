@@ -97,7 +97,7 @@ fun ExtrasPage(
                 ExtraTile(Icons.Default.Paid, "Budget & Ausgaben", "Einkäufe und Monatslimit überblicken", Teal) { section = "budget" }
                 ExtraTile(Icons.Default.People, "Familie & Einladungen", "Haushaltsmitglieder und Freigaben", Blue) { section = "family" }
                 ExtraTile(Icons.Default.NotificationsActive, "Benachrichtigungen", "Einkäufe und Aufgaben auswählen", Neon) { section = "notifications" }
-                ExtraTile(Icons.Default.PhotoCamera, "Kassenbon scannen", "Beleg fotografieren und lokal erkennen", Orange) { section = "ocr" }
+                ExtraTile(Icons.Default.PhotoCamera, "Kassenbon scannen", "Beleg fotografieren und lokal erkennen", Neon) { section = "ocr" }
                 ExtraTile(Icons.Default.Event, "Mindesthaltbarkeit", "Ablaufende Vorräte und Lebensmittel", Pink) { section = "expiry" }
                 ExtraTile(Icons.Default.PriceChange, "Eigener Preisvergleich", "Preise je Geschäft und Produkt vergleichen", Teal) { section = "prices" }
                 ExtraTile(Icons.Default.Groups, "Faire Aufgabenverteilung", "Aufgaben zwischen Mitgliedern ausbalancieren", Blue) { section = "fairness" }
