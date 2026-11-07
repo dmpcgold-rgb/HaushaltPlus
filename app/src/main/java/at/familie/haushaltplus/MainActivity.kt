@@ -263,7 +263,8 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?) {
 @Composable
 private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJump: (Int) -> Unit) {
     val missing = data.stock.count { it.quantity <= it.minimum }
-    val shoppingOpen = data.shopping.count { !it.bought }
+    val activeShopping = data.shopping.filter { !it.archived }
+    val shoppingOpen = activeShopping.count { !it.bought }
     val taskOpen = data.tasks.count { !it.done }
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
@@ -281,7 +282,7 @@ private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJ
             }
             if (data.error.isNotBlank()) Text(data.error, color = MaterialTheme.colorScheme.error)
         }
-        item { DashboardCard("Einkauf", "$shoppingOpen offen", "${data.shopping.count { it.bought }} bereits besorgt", Icons.Default.ShoppingBasket, onClick = { onJump(1) }) }
+        item { DashboardCard("Einkauf", "$shoppingOpen offen", "${activeShopping.count { it.bought }} bereits besorgt", Icons.Default.ShoppingBasket, onClick = { onJump(1) }) }
         item { DashboardCard("Aufgaben", "$taskOpen zu erledigen", "${data.tasks.count { it.done }} abgeschlossen", Icons.Default.TaskAlt, onClick = { onJump(2) }) }
         item { DashboardCard("Vorrat", "$missing Nachkäufe empfohlen", "${data.stock.size} Artikel im Vorrat", Icons.Default.Inventory2, onClick = { onJump(3) }) }
         item {
@@ -289,9 +290,9 @@ private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJ
                 Column(Modifier.padding(18.dp)) {
                     Text("Einkaufsfortschritt", fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(10.dp))
-                    val progress = if (data.shopping.isEmpty()) 0f else data.shopping.count { it.bought }.toFloat() / data.shopping.size
+                    val progress = if (activeShopping.isEmpty()) 0f else activeShopping.count { it.bought }.toFloat() / activeShopping.size
                     LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(9.dp), color = Mint)
-                    Text("${data.shopping.count { it.bought }} von ${data.shopping.size} Artikeln erledigt", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
+                    Text("${activeShopping.count { it.bought }} von ${activeShopping.size} Artikeln erledigt", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -340,11 +341,15 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
     var editing by remember { mutableStateOf<ShoppingItem?>(null) }
     var renaming by remember { mutableStateOf<ShoppingList?>(null) }
     var search by rememberSaveable { mutableStateOf("") }
+    var categoryFilter by rememberSaveable { mutableStateOf("Alle") }
     val context = LocalContext.current
     val inList = data.shopping.filter { it.listId == activeListId &&
         (showArchived || !it.archived) }
     val archivableCount = data.shopping.count { it.listId == activeListId && it.bought && !it.archived }
-    val ordered = inList.filter { (showBought || !it.bought) && it.name.contains(search, ignoreCase = true) }
+    val categories = listOf("Alle") + inList.map { it.category }.distinct().sorted()
+    val ordered = inList.filter { (showBought || !it.bought) &&
+        (categoryFilter == "Alle" || it.category == categoryFilter) &&
+        it.name.contains(search, ignoreCase = true) }
         .sortedWith(compareBy<ShoppingItem> { it.bought }.thenBy { it.category }.thenBy { it.name.lowercase() })
     val favorites = data.shopping.filter { it.bought }.groupingBy { it.name.trim() }.eachCount().entries
         .sortedByDescending { it.value }.take(4).map { it.key }
@@ -369,6 +374,14 @@ private fun ShoppingPage(data: HouseholdData, store: HouseholdStore, modifier: M
             }
             OutlinedTextField(search, { search = it }, label = { Text("Artikel suchen") },
                 leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                categories.forEach { category ->
+                    FilterChip(selected = (categoryFilter == category),
+                        onClick = { categoryFilter = category }, label = { Text(category) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Mint, selectedLabelColor = Color.Black))
+                }
+            }
             if (favorites.isNotEmpty()) {
                 Text("HÄUFIG GEKAUFT", color = AccentPink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
