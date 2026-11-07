@@ -266,6 +266,9 @@ private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJ
     val activeShopping = data.shopping.filter { !it.archived }
     val shoppingOpen = activeShopping.count { !it.bought }
     val taskOpen = data.tasks.count { !it.done }
+    val today = LocalDate.now().toString()
+    val dueTasks = data.tasks.filter { !it.done && it.due.isNotBlank() && it.due <= today }
+        .sortedBy { it.due }
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Box(Modifier.fillMaxWidth().background(
@@ -285,6 +288,25 @@ private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJ
         item { DashboardCard("Einkauf", "$shoppingOpen offen", "${activeShopping.count { it.bought }} bereits besorgt", Icons.Default.ShoppingBasket, onClick = { onJump(1) }) }
         item { DashboardCard("Aufgaben", "$taskOpen zu erledigen", "${data.tasks.count { it.done }} abgeschlossen", Icons.Default.TaskAlt, onClick = { onJump(2) }) }
         item { DashboardCard("Vorrat", "$missing Nachkäufe empfohlen", "${data.stock.size} Artikel im Vorrat", Icons.Default.Inventory2, onClick = { onJump(3) }) }
+        if (dueTasks.isNotEmpty()) item {
+            ElevatedCard(onClick = { onJump(2) }, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.NotificationsActive, "Fällige Aufgaben", tint = AccentPink)
+                        Spacer(Modifier.width(8.dp))
+                        Text("${dueTasks.size} heute fällig oder überfällig",
+                            fontWeight = FontWeight.Bold, color = AccentPink)
+                    }
+                    dueTasks.take(3).forEach { task ->
+                        Text("• " + task.title +
+                            if (task.assignee == "Alle") "" else " · " + task.assignee,
+                            style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (dueTasks.size > 3) Text("Weitere Aufgaben ansehen",
+                        color = Muted, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         item {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(18.dp)) {
