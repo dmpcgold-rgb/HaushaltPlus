@@ -165,6 +165,7 @@ class LocalStore(private val context: Context) : HouseholdStore {
         })
         prefs.edit().putString("data",root.toString()).apply()
         mutable.value = next.copy(syncStatus = "Lokal gespeichert")
+        HaushaltWidgetUpdater.update(context, mutable.value)
     }
     private fun mutate(fn: (HouseholdData) -> HouseholdData) = save(fn(mutable.value))
     private fun withEvent(h: HouseholdData, title: String, kind: String): HouseholdData =

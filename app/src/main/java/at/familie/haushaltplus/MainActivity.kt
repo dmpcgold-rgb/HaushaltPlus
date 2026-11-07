@@ -57,10 +57,12 @@ private val Muted = Color(0xFFB7B9C7)
 
 class MainActivity : ComponentActivity() {
     private var requestedTab by mutableIntStateOf(0)
+    private var widgetQuickAddToken by mutableIntStateOf(0)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         requestedTab = intent?.getIntExtra("open_tab", 0) ?: 0
+        if (intent?.getBooleanExtra("quick_add_shopping", false) == true) widgetQuickAddToken++
         val local = LocalStore(this)
         if (!BuildConfig.FIREBASE_ENABLED) FreeNotifications.scheduleLocal(this)
         val cloud = if (BuildConfig.FIREBASE_ENABLED) CloudSession(this) else null
@@ -85,13 +87,13 @@ class MainActivity : ComponentActivity() {
                 titleMedium = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 bodyMedium = MaterialTheme.typography.bodyMedium
             )) {
-                if (cloud == null) HouseholdScreen(local, null, requestedTab)
+                if (cloud == null) HouseholdScreen(local, null, requestedTab, widgetQuickAddToken)
                 else {
                     val state by cloud.state.collectAsState()
                     when {
                         !state.signedIn -> LoginScreen(cloud, state)
                         state.needsHousehold -> CreateOrJoinScreen(cloud, state)
-                        state.store != null -> HouseholdScreen(state.store!!, cloud, requestedTab)
+                        state.store != null -> HouseholdScreen(state.store!!, cloud, requestedTab, widgetQuickAddToken)
                         state.busy -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                         else -> CreateOrJoinScreen(cloud, state)
                     }
@@ -103,6 +105,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         requestedTab = intent.getIntExtra("open_tab", 0)
+        if (intent.getBooleanExtra("quick_add_shopping", false)) widgetQuickAddToken++
     }
 }
 
@@ -182,13 +185,17 @@ private fun CreateOrJoinScreen(session: CloudSession, state: CloudState) {
 private val pages = listOf("Start", "Einkauf", "Aufgaben", "Vorrat", "Mehr")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?, requestedTab: Int = 0) {
+private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?, requestedTab: Int = 0,
+    quickAddToken: Int = 0) {
     val data by store.data.collectAsState()
     var selected by rememberSaveable { mutableIntStateOf(requestedTab) }
     LaunchedEffect(requestedTab) { selected = requestedTab.coerceIn(0, 4) }
     val snackbar = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
     var adding by remember { mutableStateOf(false) }
+    LaunchedEffect(quickAddToken) {
+        if (quickAddToken > 0) { selected = 1; adding = true }
+    }
     var activeListId by rememberSaveable { mutableStateOf("standard") }
     var addListOpen by remember { mutableStateOf(false) }
     var houseOpen by remember { mutableStateOf(false) }

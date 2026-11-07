@@ -187,6 +187,7 @@ class CloudSession(private val context: Context) {
         }.addOnFailureListener { reply(it.localizedMessage ?: "Passwort falsch") }
     }
     fun logout() {
+        HaushaltWidgetUpdater.clear(context)
         WorkManager.getInstance(context).cancelUniqueWork("haushalt_free_notifications")
         context.getSharedPreferences("haushalt_cloud", Context.MODE_PRIVATE).edit()
             .remove("homeId").remove("homeUid").apply()
@@ -240,6 +241,7 @@ class CloudStore(
             }, pendingWrites = snap?.metadata?.hasPendingWrites() == true,
             lastSyncedAt = if (snap != null && !snap.metadata.isFromCache && !snap.metadata.hasPendingWrites())
                 System.currentTimeMillis() else mutable.value.lastSyncedAt)
+            HaushaltWidgetUpdater.update(context, mutable.value)
         }
         listeners += home.collection("tasks").addSnapshotListener { snap, e ->
             if (e != null) { setError(e); return@addSnapshotListener }
@@ -251,6 +253,7 @@ class CloudStore(
                     doc.getBoolean("done") ?: false, doc.getString("doneBy") ?: "", doc.getString("doneByName") ?: "",
                     doc.getBoolean("rotate") ?: false)
             } ?: emptyList())
+            HaushaltWidgetUpdater.update(context, mutable.value)
         }
         listeners += home.collection("stock").addSnapshotListener { snap, e ->
             if (e != null) { setError(e); return@addSnapshotListener }
