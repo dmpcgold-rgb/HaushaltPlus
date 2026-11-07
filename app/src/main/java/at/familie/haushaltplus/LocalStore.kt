@@ -209,8 +209,12 @@ class LocalStore(private val context: Context) : HouseholdStore {
             if (item.listId == listId && item.bought) item.copy(archived = true) else item
         })
     }
-    override fun deleteShopping(item: ShoppingItem) =
-        mutate { it.copy(shopping = it.shopping.filterNot { s -> s.id == item.id }) }
+    override fun deleteShopping(item: ShoppingItem) = mutate { h ->
+        val current = h.shopping.firstOrNull { it.id == item.id } ?: return@mutate h
+        h.copy(shopping = h.shopping.filterNot { it.id == item.id },
+            trash = h.trash + TrashEntry(id(), "shopping", current.name,
+                V4TrashCodec.shopping(current), System.currentTimeMillis()))
+    }
     override fun addTask(title: String, assignee: String, due: String, repeat: String, rotate: Boolean) =
         mutate { it.copy(tasks = it.tasks + HouseholdTask(id(), title.trim(), assignee, due, repeat, rotate = rotate)) }
     override fun updateTask(task: HouseholdTask) =
@@ -235,8 +239,12 @@ class LocalStore(private val context: Context) : HouseholdStore {
                 "Aufgabe wieder geöffnet: " + current.title, "tasks").copy(tasks = updated + next)
         }
     }
-    override fun deleteTask(item: HouseholdTask) =
-        mutate { it.copy(tasks = it.tasks.filterNot { t -> t.id == item.id }) }
+    override fun deleteTask(item: HouseholdTask) = mutate { h ->
+        val current = h.tasks.firstOrNull { it.id == item.id } ?: return@mutate h
+        h.copy(tasks = h.tasks.filterNot { it.id == item.id },
+            trash = h.trash + TrashEntry(id(), "task", current.title,
+                V4TrashCodec.task(current), System.currentTimeMillis()))
+    }
     override fun addStock(name: String, quantity: Int, minimum: Int, unit: String) =
         mutate { h ->
             val need = quantity <= minimum &&
@@ -271,8 +279,12 @@ class LocalStore(private val context: Context) : HouseholdStore {
         withEvent(changed, item.name + ": Bestand " + newQuantity, "stock")
     }
     override fun retryFailedStockChange() { /* Local writes are committed immediately. */ }
-    override fun deleteStock(item: StockItem) =
-        mutate { it.copy(stock = it.stock.filterNot { s -> s.id == item.id }) }
+    override fun deleteStock(item: StockItem) = mutate { h ->
+        val current = h.stock.firstOrNull { it.id == item.id } ?: return@mutate h
+        h.copy(stock = h.stock.filterNot { it.id == item.id },
+            trash = h.trash + TrashEntry(id(), "stock", current.name,
+                V4TrashCodec.stock(current), System.currentTimeMillis()))
+    }
     override fun setBudget(value: Double) = mutate { it.copy(monthlyBudget = value.coerceAtLeast(0.0)) }
     override fun addMeal(date: String, slot: String, title: String, ingredients: String) =
         mutate { it.copy(meals = it.meals + MealEntry(id(), date, slot, title.trim(), ingredients.trim())) }
@@ -294,8 +306,51 @@ class LocalStore(private val context: Context) : HouseholdStore {
         h.copy(recipes = h.recipes + RecipeEntry(id(), name.trim(), portions.coerceAtLeast(1), ingredients))
     }
     override fun deleteRecipe(item: RecipeEntry) = mutate { h ->
-        h.copy(recipes = h.recipes.filterNot { it.id == item.id })
+        val current = h.recipes.firstOrNull { it.id == item.id } ?: return@mutate h
+        h.copy(recipes = h.recipes.filterNot { it.id == item.id },
+            trash = h.trash + TrashEntry(id(), "recipe", current.name,
+                V4TrashCodec.recipe(current), System.currentTimeMillis()))
     }
+    override fun addPrice(product: String, shop: String, unitPrice: Double, unit: String, date: String) =
+        mutate { h -> h.copy(prices = h.prices + PriceEntry(id(), product.trim(), shop.trim(),
+            unitPrice.coerceAtLeast(0.0), unit, date)) }
+    override fun deletePrice(item: PriceEntry) =
+        mutate { h -> h.copy(prices = h.prices.filterNot { it.id == item.id }) }
+    override fun saveChecklist(name: String, titles: List<String>) =
+        mutate { h -> h.copy(checklists = h.checklists + ChecklistTemplate(id(), name.trim(), titles.take(80))) }
+    override fun deleteChecklist(item: ChecklistTemplate) =
+        mutate { h -> h.copy(checklists = h.checklists.filterNot { it.id == item.id }) }
+    override fun restoreTrash(item: TrashEntry) = mutate { h ->
+        val current = h.trash.firstOrNull { it.id == item.id } ?: return@mutate h
+        if (V4TrashCodec.isExpired(current)) return@mutate h.copy(trash = h.trash - current)
+        val updated = when (current.type) {
+            "shopping" -> {
+                val recovered = V4TrashCodec.restoreShopping(current.payload)
+                h.copy(shopping = h.shopping + recovered.copy(
+                    id = if (h.shopping.any { it.id == recovered.id }) id() else recovered.id,
+                    listId = if (h.lists.any { it.id == recovered.listId }) recovered.listId else "standard"))
+            }
+            "task" -> {
+                val recovered = V4TrashCodec.restoreTask(current.payload)
+                h.copy(tasks = h.tasks + recovered.copy(
+                    id = if (h.tasks.any { it.id == recovered.id }) id() else recovered.id))
+            }
+            "recipe" -> {
+                val recovered = V4TrashCodec.restoreRecipe(current.payload)
+                h.copy(recipes = h.recipes + recovered.copy(
+                    id = if (h.recipes.any { it.id == recovered.id }) id() else recovered.id))
+            }
+            "stock" -> {
+                val recovered = V4TrashCodec.restoreStock(current.payload)
+                h.copy(stock = h.stock + recovered.copy(
+                    id = if (h.stock.any { it.id == recovered.id }) id() else recovered.id))
+            }
+            else -> h
+        }
+        updated.copy(trash = updated.trash.filterNot { it.id == item.id })
+    }
+    override fun purgeTrash(item: TrashEntry) =
+        mutate { h -> h.copy(trash = h.trash.filterNot { it.id == item.id }) }
     override fun removeMember(uid: String) {}
     override fun transferOwnership(uid: String, reply: (String) -> Unit) = reply("Nur mit Cloud-Konto möglich")
     override fun revokeInvite(code: String, reply: (String) -> Unit) = reply("Nur mit Cloud-Konto möglich")
