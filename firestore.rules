@@ -54,13 +54,16 @@ service cloud.firestore {
         allow update: if loggedIn() &&
           ((request.auth.uid == userId &&
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'notifyComplete'])) || owner(homeId));
-        allow delete: if owner(homeId) &&
+        allow delete: if (owner(homeId) || (loggedIn() && request.auth.uid == userId)) &&
           get(/databases/$(database)/documents/households/$(homeId)).data.ownerUid != userId;
       }
       match /shoppingLists/{listId} {
         allow read, write: if member(homeId);
       }
       match /shoppingItems/{itemId} {
+        allow read, write: if member(homeId);
+      }
+      match /meals/{mealId} {
         allow read, write: if member(homeId);
       }
       match /tasks/{taskId} {
@@ -73,11 +76,12 @@ service cloud.firestore {
       match /activity/{eventId} {
         allow read: if member(homeId);
         allow create: if member(homeId) &&
-          request.resource.data.keys().hasOnly(['actorUid', 'actorName', 'title', 'createdAt']) &&
+          request.resource.data.keys().hasOnly(['actorUid', 'actorName', 'title', 'kind', 'createdAt']) &&
           request.resource.data.actorUid == request.auth.uid &&
           request.resource.data.actorName is string &&
           request.resource.data.title is string &&
           request.resource.data.title.size() <= 180 &&
+          request.resource.data.kind in ['all', 'shopping', 'tasks', 'family'] &&
           request.resource.data.createdAt is timestamp;
         allow update, delete: if false;
       }
