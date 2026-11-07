@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: haushaltplus-firebase-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   cloud-build:
     runs-on: ubuntu-latest

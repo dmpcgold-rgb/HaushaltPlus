@@ -2,8 +2,22 @@ name: Cloud functions tests
 on:
   push:
     branches: [main]
+    paths:
+      - 'functions/**'
+      - '.github/workflows/functions-tests.yml'
   pull_request:
+    paths:
+      - 'functions/**'
+      - '.github/workflows/functions-tests.yml'
   workflow_dispatch:
+
+concurrency:
+  group: haushaltplus-functions-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
