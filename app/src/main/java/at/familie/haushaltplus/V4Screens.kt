@@ -39,7 +39,7 @@ private val GrayV4 = Color(0xFFBCBDD0)
 
 @Composable
 fun V4FeaturesPage(section: String, data: HouseholdData, store: HouseholdStore,
-    onJump: (Int) -> Unit) {
+    onJump: (Int) -> Unit, onOpenFeature: (String) -> Unit = {}) {
     when (section) {
         "ocr" -> ReceiptOcrScreen(store)
         "expiry" -> ExpiryScreen(data, store, onJump)
@@ -47,7 +47,7 @@ fun V4FeaturesPage(section: String, data: HouseholdData, store: HouseholdStore,
         "fairness" -> FairTasksScreen(data, store)
         "checklists" -> ChecklistScreen(data, store)
         "trash" -> RecycleBinScreen(data, store)
-        "search" -> GlobalSearchScreen(data, onJump)
+        "search" -> GlobalSearchScreen(data, onJump, onOpenFeature)
         "appearance" -> AppearanceScreen()
         "diagnostics" -> DiagnosticScreen(data)
     }
@@ -372,7 +372,8 @@ private fun RecycleBinScreen(data: HouseholdData, store: HouseholdStore) {
 }
 
 @Composable
-private fun GlobalSearchScreen(data: HouseholdData, onJump: (Int) -> Unit) {
+private fun GlobalSearchScreen(data: HouseholdData, onJump: (Int) -> Unit,
+    onOpenFeature: (String) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     V4Heading("Alles durchsuchen", "Einkäufe, Vorräte, Aufgaben, Rezepte und Ausgaben")
     OutlinedTextField(query, { query = it.take(100) }, modifier = Modifier.fillMaxWidth(),
@@ -393,20 +394,26 @@ private fun GlobalSearchScreen(data: HouseholdData, onJump: (Int) -> Unit) {
         V4SearchHit("Vorrat", item.name + " · " + item.quantity + " " + item.unit, 3, onJump)
     }
     data.recipes.filter { it.name.contains(query, true) || it.ingredients.contains(query, true) }
-        .take(10).forEach { V4SearchHit("Rezept", it.name, 4, onJump) }
+        .take(10).forEach { V4SearchHit("Rezept", it.name, 4, onJump, "recipes", onOpenFeature) }
     data.receipts.filter { it.merchant.contains(query, true) || it.note.contains(query, true) }
-        .take(10).forEach { V4SearchHit("Beleg", it.merchant + " · " + euro(it.total), 4, onJump) }
+        .take(10).forEach { V4SearchHit("Beleg", it.merchant + " · " + euro(it.total), 4, onJump,
+            "receipts", onOpenFeature) }
     data.meals.filter { it.title.contains(query, true) }.take(10)
-        .forEach { V4SearchHit("Essensplan", it.title + " · " + it.date, 4, onJump) }
+        .forEach { V4SearchHit("Essensplan", it.title + " · " + it.date, 4, onJump,
+            "meals", onOpenFeature) }
     data.checklists.filter { it.name.contains(query, true) }.take(10)
-        .forEach { V4SearchHit("Checkliste", it.name, 4, onJump) }
-    Text("Treffer öffnen die entsprechende Hauptansicht; bei Rezepten und Belegen die Übersicht Mehr.",
+        .forEach { V4SearchHit("Checkliste", it.name, 4, onJump,
+            "checklists", onOpenFeature) }
+    Text("Treffer führen direkt zum passenden Bereich. Details lassen sich dort öffnen.",
         color = GrayV4, style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable
-private fun V4SearchHit(category: String, value: String, tab: Int, onJump: (Int) -> Unit) {
-    ElevatedCard(onClick = { onJump(tab) }, modifier = Modifier.fillMaxWidth()) {
+private fun V4SearchHit(category: String, value: String, tab: Int,
+    onJump: (Int) -> Unit, feature: String = "", onOpenFeature: (String) -> Unit = {}) {
+    ElevatedCard(onClick = {
+        if (feature.isNotBlank()) onOpenFeature(feature) else onJump(tab)
+    }, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(category.uppercase(), color = OrangeV4, style = MaterialTheme.typography.labelSmall)
