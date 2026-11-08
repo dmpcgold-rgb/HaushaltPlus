@@ -204,6 +204,26 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?, reque
     val data by store.data.collectAsState()
     var selected by rememberSaveable { mutableIntStateOf(requestedTab) }
     LaunchedEffect(requestedTab) { selected = requestedTab.coerceIn(0, 4) }
+    var shoppingSection by rememberSaveable { mutableStateOf("") }
+    var tasksSection by rememberSaveable { mutableStateOf("") }
+    var stockSection by rememberSaveable { mutableStateOf("") }
+    var extraSectionRequest by remember { mutableStateOf("") }
+    val navigateToTab: (Int) -> Unit = { target ->
+        selected = target.coerceIn(0, 4)
+        shoppingSection = ""
+        tasksSection = ""
+        stockSection = ""
+        extraSectionRequest = ""
+    }
+    val navigateToFeature: (String) -> Unit = { feature ->
+        when (FeatureNavigation.targetTab(feature)) {
+            1 -> { navigateToTab(1); shoppingSection = feature }
+            2 -> { navigateToTab(2); tasksSection = feature }
+            3 -> { navigateToTab(3); stockSection = feature }
+            4 -> { navigateToTab(4); extraSectionRequest = feature }
+            else -> Unit
+        }
+    }
     val snackbar = remember { SnackbarHostState() }
     val haptics = LocalHapticFeedback.current
     var adding by remember { mutableStateOf(false) }
@@ -269,7 +289,7 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?, reque
         bottomBar = {
             NavigationBar(containerColor = Panel) {
                 pages.forEachIndexed { idx, title ->
-                    NavigationBarItem(selected = selected == idx, onClick = { selected = idx },
+                    NavigationBarItem(selected = selected == idx, onClick = { navigateToTab(idx) },
                         alwaysShowLabel = false,
                         icon = { Icon(when(idx) { 0 -> Icons.Default.Home; 1 -> Icons.Default.ShoppingCart; 2 -> Icons.Default.CheckCircle; 3 -> Icons.Default.Inventory2; else -> Icons.Default.MoreHoriz }, title) },
                         label = { Text(title) },
@@ -279,29 +299,51 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?, reque
             }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { if (selected in 1..3) adding = true else quickAdd = true },
-                containerColor = Mint, contentColor = Color.Black) { Icon(Icons.Default.Add, "Hinzufügen") }
+            val insideFeature = (selected == 1 && shoppingSection.isNotBlank()) ||
+                (selected == 2 && tasksSection.isNotBlank()) ||
+                (selected == 3 && stockSection.isNotBlank())
+            if (!insideFeature) FloatingActionButton(
+                onClick = { if (selected in 1..3) adding = true else quickAdd = true },
+                containerColor = Mint, contentColor = Color.Black
+            ) { Icon(Icons.Default.Add, "Hinzufügen") }
         }
     ) { padding ->
         when (selected) {
-            0 -> OverviewPage(data, modifier = Modifier.padding(padding), onJump = { selected = it })
-            1 -> ShoppingPage(data, store, Modifier.padding(padding), activeListId, { activeListId = it },
-                { addListOpen = true }, scanBarcode, startVoice, scanStatus, onToggle = { item, checked ->
-                    store.setShoppingDone(item, checked)
-                    val vibrate = !context.getSharedPreferences("haushalt_v3_ui", Context.MODE_PRIVATE)
-                        .getBoolean("reduce_motion", false)
-                    if (vibrate) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    scope.launch {
-                        val result = snackbar.showSnackbar(
-                            if (checked) "Eingekauft: " + item.name else "Wieder geöffnet: " + item.name,
-                            actionLabel = "Rückgängig", withDismissAction = false,
-                            duration = SnackbarDuration.Short)
-                        if (result == SnackbarResult.ActionPerformed) store.setShoppingDone(item, !checked)
-                    }
-                })
-            2 -> TasksPage(data, store, Modifier.padding(padding))
-            3 -> StockPage(data, store, Modifier.padding(padding))
-            else -> ExtrasPage(data, store, session, Modifier.padding(padding), onJump = { selected = it })
+            0 -> OverviewPage(data, modifier = Modifier.padding(padding),
+                onJump = navigateToTab, onOpenFeature = navigateToFeature)
+            1 -> HouseholdCategoryTab("Einkauf", FeatureNavigation.shopping,
+                shoppingSection, { shoppingSection = it }, data, store,
+                Modifier.padding(padding), navigateToTab) { childModifier ->
+                ShoppingPage(data, store, childModifier, activeListId, { activeListId = it },
+                    { addListOpen = true }, scanBarcode, startVoice, scanStatus, onToggle = { item, checked ->
+                        store.setShoppingDone(item, checked)
+                        val vibrate = !context.getSharedPreferences("haushalt_v3_ui", Context.MODE_PRIVATE)
+                            .getBoolean("reduce_motion", false)
+                        if (vibrate) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        scope.launch {
+                            val result = snackbar.showSnackbar(
+                                if (checked) "Eingekauft: " + item.name else "Wieder geöffnet: " + item.name,
+                                actionLabel = "Rückgängig", withDismissAction = false,
+                                duration = SnackbarDuration.Short)
+                            if (result == SnackbarResult.ActionPerformed) store.setShoppingDone(item, !checked)
+                        }
+                    })
+            }
+            2 -> HouseholdCategoryTab("Aufgaben", FeatureNavigation.tasks,
+                tasksSection, { tasksSection = it }, data, store,
+                Modifier.padding(padding), navigateToTab) { childModifier ->
+                TasksPage(data, store, childModifier)
+            }
+            3 -> HouseholdCategoryTab("Vorrat", FeatureNavigation.stock,
+                stockSection, { stockSection = it }, data, store,
+                Modifier.padding(padding), navigateToTab) { childModifier ->
+                StockPage(data, store, childModifier)
+            }
+            else -> ExtrasPage(data, store, session, Modifier.padding(padding),
+                onJump = navigateToTab,
+                requestedSection = extraSectionRequest,
+                onRequestedSectionHandled = { extraSectionRequest = "" },
+                onOpenFeature = navigateToFeature)
         }
     }
     if (quickAdd) AlertDialog(onDismissRequest = { quickAdd = false },
@@ -373,7 +415,8 @@ private fun HouseholdScreen(store: HouseholdStore, session: CloudSession?, reque
 }
 
 @Composable
-private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJump: (Int) -> Unit) {
+private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier,
+    onJump: (Int) -> Unit, onOpenFeature: (String) -> Unit) {
     val context = LocalContext.current
     val order = DashboardOptions.read(context)
     val missing = data.stock.count { it.quantity <= it.minimum }
@@ -447,7 +490,7 @@ private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJ
                     "meals" -> item(key = "meals") {
                         val today = LocalDate.now().toString()
                         val meals = data.meals.filter { it.date == today }
-                        ElevatedCard(onClick = { onJump(4) }, modifier = Modifier.fillMaxWidth()) {
+                        ElevatedCard(onClick = { onOpenFeature("meals") }, modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp)) {
                                 Text("Heute essen", fontWeight = FontWeight.Bold, color = AccentPink)
                                 Text(if (meals.isEmpty()) "Noch nichts geplant" else
@@ -456,7 +499,7 @@ private fun OverviewPage(data: HouseholdData, modifier: Modifier = Modifier, onJ
                         }
                     }
                     "budget" -> item(key = "budget") {
-                        ElevatedCard(onClick = { onJump(4) }, modifier = Modifier.fillMaxWidth()) {
+                        ElevatedCard(onClick = { onOpenFeature("budget") }, modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(16.dp)) {
                                 Text("Belege diesen Monat", fontWeight = FontWeight.Bold, color = AccentTeal)
                                 Text("%.2f €".format(Locale.GERMANY, spent),
