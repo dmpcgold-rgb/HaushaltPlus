@@ -1,6 +1,7 @@
 package at.familie.haushaltplus
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -35,7 +36,7 @@ class FeatureNavigationTest {
         val routes = FeatureNavigation.allRoutes()
         assertEquals(routes.size, routes.distinct().size)
         assertFalse(routes.isEmpty())
-        assertEquals(null, FeatureNavigation.targetTab("unknown"))
+        assertNull(FeatureNavigation.targetTab("unknown"))
     }
 
     @Test fun mostUsedFeaturesNoLongerUnderMore() {

@@ -1,4 +1,4 @@
-# Haushalt+ v0.4.0 – Android-Familienhaushalt
+# Haushalt+ v0.4.1 – Android-Familienhaushalt
 
 Native Kotlin-/Jetpack-Compose-App mit RAUS0-inspiriertem **dunklem Neon-Design** (Schwarz/Carbon, Orange, Pink, Türkis und Blau). Android-Paketname: `at.familie.haushaltplus`. Quellcode ausschließlich im Gold-Repository `dmpcgold-rgb/HaushaltPlus`.
 
@@ -14,6 +14,22 @@ Native Kotlin-/Jetpack-Compose-App mit RAUS0-inspiriertem **dunklem Neon-Design*
 8. **Barcode-Scanner:** Google Code Scanner (Google Play Services, keine Kamera-Appberechtigung) und einzelne, vom Nutzer ausgelöste Produktnamensabfragen bei Open Food Facts. Offline/bei unbekannten Produkten bleibt der Code als bearbeitbarer Name stehen.
 9. **Essensplan:** Mahlzeiten für die kommenden sieben Tage; Zutaten aus kommagetrennten Rezeptlisten auf die Einkaufsliste übernehmen.
 10. **Daten und Kontosicherheit:** JSON-Export über Android-Dateiauswahl, bestätigter Import fehlender Einträge, Passwort-Zurücksetzen per E-Mail, Konto-Löschung für Nicht-Besitzer nach Reauthentifizierung; Besitzer übertragen vorher die Verwaltung.
+
+## Neu in v0.4.1: aufgeräumte Navigation ohne Funktionsverlust
+
+Die fünf Hauptreiter bleiben **Start · Einkauf · Aufgaben · Vorrat · Mehr**.
+
+- **Einkauf**: Einkaufslisten mit einer waagerechten, kompakten Funktionsleiste für Vorlagen, Kassenbelege, Beleg-Scanner, Preisvergleich und Budget.
+- **Aufgaben**: Aufgabenlisten und daneben direkt Kalender, Checklisten sowie faire Aufgabenverteilung.
+- **Vorrat**: Bestandsliste und direkt MHD, Rezeptbuch sowie Essensplanung.
+- **Mehr**: nur sechs primäre Navigationskacheln: Familie & Einladungen, Suche, Familienaktivität, Einstellungen & Design, Daten & Kontosicherheit und Diagnose. Unter Einstellungen liegen Benachrichtigungen/Startseite/Design; unter Daten & Kontosicherheit liegen Backup/Papierkorb/Konto.
+- Die Funktionsseiten werden **wiederverwendet**, nicht neu erstellt. Alle bestehenden Datenmodelle, Firebase-Collections, Firestore-Regeln und APIs bleiben unverändert.
+- Ein sichtbarer Zurück-Pfeil schließt Unterseiten, und die Hauptnavigation bringt direkt zurück zur Hauptliste.
+- Die Startseiten-Kacheln für Essensplan und Budget öffnen jetzt die passende Unterseite in **Vorrat** bzw. **Einkauf**. Die globale Suche führt bei Rezepten/Belegen/Checklisten direkt in die zugehörige Unterseite.
+- Das globale Schnell-Hinzufügen bleibt erhalten; auf einer Unterseite wird der FAB ausgeblendet, damit keine irreführenden Aktionen erscheinen.
+- Neue Unit-Tests stellen sicher, dass alle vorhandenen Funktionen genau einer Hauptkategorie zugeordnet sind und keine Route verloren geht.
+
+Das Update ist **navigationsbezogen**: keine Datenmigration, kein zusätzliches Firebase-Kontingent, kein Blaze-Wechsel. Bestehende v0.4-Funktionen bleiben erhalten.
 
 ## Neu in v0.4.0: zusätzliche Funktionen und Qualitätsverbesserungen
 
