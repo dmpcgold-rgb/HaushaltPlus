@@ -46,10 +46,19 @@ fun ExtrasPage(
     store: HouseholdStore,
     session: CloudSession?,
     modifier: Modifier = Modifier,
-    onJump: (Int) -> Unit = {}
+    onJump: (Int) -> Unit = {},
+    requestedSection: String = "",
+    onRequestedSectionHandled: () -> Unit = {},
+    onOpenFeature: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     var section by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(requestedSection) {
+        if (requestedSection.isNotBlank()) {
+            section = requestedSection
+            onRequestedSectionHandled()
+        }
+    }
     var status by remember { mutableStateOf("") }
     var imported by remember { mutableStateOf<String?>(null) }
     val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -75,7 +84,11 @@ fun ExtrasPage(
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (section.isNotEmpty()) {
-            TextButton(onClick = { section = "" }) {
+            TextButton(onClick = { section = when(section) {
+                "notifications", "dashboard", "appearance" -> "settings"
+                "backup", "trash", "account" -> "data"
+                else -> ""
+            } }) {
                 Icon(Icons.Default.ArrowBack, "Zurück")
                 Spacer(Modifier.width(7.dp))
                 Text("Zur Übersicht")
@@ -83,31 +96,44 @@ fun ExtrasPage(
         }
         when(section) {
             "" -> {
-                Text("MEIN HAUSHALT", color = Neon, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold)
-                Text("Alles im Griff", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.ExtraBold)
-                Text("Gemeinsam planen, einkaufen und organisieren.", color = Muted)
-                Spacer(Modifier.height(2.dp))
-                ExtraTile(Icons.Default.Restaurant, "Essensplan", "Mahlzeiten und Zutaten für die Woche", Pink) { section = "meals" }
-                ExtraTile(Icons.Default.Bookmarks, "Einkaufsvorlagen", "Listen für regelmäßige Einkäufe", Neon) { section = "templates" }
-                ExtraTile(Icons.Default.ReceiptLong, "Kassenbelege", "Beträge und Geschäfte vergleichen", Teal) { section = "receipts" }
-                ExtraTile(Icons.Default.MenuBook, "Rezeptbuch", "Portionen umrechnen und Zutaten einkaufen", Pink) { section = "recipes" }
-                ExtraTile(Icons.Default.CalendarMonth, "Familienkalender", "Woche und Monat gemeinsam planen", Blue) { section = "calendar" }
-                ExtraTile(Icons.Default.History, "Aktivitätsverlauf", "Änderungen in der Familie nachvollziehen", Teal) { section = "activity" }
-                ExtraTile(Icons.Default.DashboardCustomize, "Startseite gestalten", "Kacheln sortieren und ausblenden", Neon) { section = "dashboard" }
-                ExtraTile(Icons.Default.Paid, "Budget & Ausgaben", "Einkäufe und Monatslimit überblicken", Teal) { section = "budget" }
-                ExtraTile(Icons.Default.People, "Familie & Einladungen", "Haushaltsmitglieder und Freigaben", Blue) { section = "family" }
-                ExtraTile(Icons.Default.NotificationsActive, "Benachrichtigungen", "Einkäufe und Aufgaben auswählen", Neon) { section = "notifications" }
-                ExtraTile(Icons.Default.PhotoCamera, "Kassenbon scannen", "Beleg fotografieren und lokal erkennen", Neon) { section = "ocr" }
-                ExtraTile(Icons.Default.Event, "Mindesthaltbarkeit", "Ablaufende Vorräte und Lebensmittel", Pink) { section = "expiry" }
-                ExtraTile(Icons.Default.PriceChange, "Eigener Preisvergleich", "Preise je Geschäft und Produkt vergleichen", Teal) { section = "prices" }
-                ExtraTile(Icons.Default.Groups, "Faire Aufgabenverteilung", "Aufgaben zwischen Mitgliedern ausbalancieren", Blue) { section = "fairness" }
-                ExtraTile(Icons.Default.Checklist, "Haushalts-Checklisten", "Vorlagen für wiederkehrende Abläufe", Neon) { section = "checklists" }
-                ExtraTile(Icons.Default.RestoreFromTrash, "Papierkorb", "Versehentlich gelöschte Einträge retten", Pink) { section = "trash" }
-                ExtraTile(Icons.Default.ManageSearch, "Alles durchsuchen", "Einkauf, Aufgaben, Rezepte und Belege", Blue) { section = "search" }
-                ExtraTile(Icons.Default.Palette, "Design & Bedienung", "Akzente, Kontrast und kompakte Ansichten", Neon) { section = "appearance" }
-                ExtraTile(Icons.Default.MonitorHeart, "Diagnose & Fehler", "Synchronisierung und Geräteverbindung prüfen", Teal) { section = "diagnostics" }
-                ExtraTile(Icons.Default.SaveAlt, "Sicherung & Wiederherstellung", "Deine Daten in eine JSON-Datei exportieren", Pink) { section = "backup" }
-                ExtraTile(Icons.Default.Security, "Konto & Sicherheit", "Passwort und Konto verwalten", Teal) { section = "account" }
+                Text("MEHR", color = Neon, style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.ExtraBold)
+                Text("Haushalt verwalten", style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.ExtraBold)
+                Text("Alle wichtigen Einstellungen und Familienfunktionen an einem Ort.", color = Muted)
+                Spacer(Modifier.height(3.dp))
+                ExtraTile(Icons.Default.People, "Familie & Einladungen",
+                    "Mitglieder, Freigaben und Haushaltsverwaltung", Blue) { section = "family" }
+                ExtraTile(Icons.Default.ManageSearch, "Alles durchsuchen",
+                    "Einkäufe, Aufgaben, Vorräte und Rezepte finden", Neon) { section = "search" }
+                ExtraTile(Icons.Default.History, "Familienaktivität",
+                    "Änderungen im gemeinsamen Haushalt", Teal) { section = "activity" }
+                ExtraTile(Icons.Default.Tune, "Einstellungen & Design",
+                    "Benachrichtigungen, Startseite und Darstellung", Pink) { section = "settings" }
+                ExtraTile(Icons.Default.Shield, "Daten & Kontosicherheit",
+                    "Sicherung, Papierkorb und Konto", Blue) { section = "data" }
+                ExtraTile(Icons.Default.MonitorHeart, "Diagnose & Fehler",
+                    "Verbindung und Synchronisierung prüfen", Teal) { section = "diagnostics" }
+                Text("Einkaufsbelege und Preise findest du unter Einkauf; Kalender und Checklisten unter Aufgaben; Rezepte und MHD unter Vorrat.",
+                    color = Muted, style = MaterialTheme.typography.bodySmall)
+            }
+            "settings" -> {
+                SectionTitle("Einstellungen & Design", "Wie Haushalt+ aussehen und dich erinnern soll.")
+                ExtraTile(Icons.Default.NotificationsActive, "Benachrichtigungen",
+                    "Erinnerungen, Ruhezeiten und Energiesparen", Neon) { section = "notifications" }
+                ExtraTile(Icons.Default.DashboardCustomize, "Startseite gestalten",
+                    "Kacheln und Schnellzugriffe anpassen", Pink) { section = "dashboard" }
+                ExtraTile(Icons.Default.Palette, "Darstellung",
+                    "Farben, Kontrast und kompakte Ansicht", Blue) { section = "appearance" }
+            }
+            "data" -> {
+                SectionTitle("Daten & Kontosicherheit", "Sicherungen und Wiederherstellung an einem Ort.")
+                ExtraTile(Icons.Default.SaveAlt, "Sicherung & Wiederherstellung",
+                    "Daten exportieren und importieren", Teal) { section = "backup" }
+                ExtraTile(Icons.Default.RestoreFromTrash, "Papierkorb",
+                    "Gelöschte Einträge wiederherstellen", Pink) { section = "trash" }
+                ExtraTile(Icons.Default.Security, "Konto & Sicherheit",
+                    "Passwort und Konto verwalten", Blue) { section = "account" }
             }
             "meals" -> MealsSection(data, store)
             "budget" -> BudgetSection(data, store)
@@ -132,7 +158,7 @@ fun ExtrasPage(
             "templates", "receipts", "recipes", "calendar", "activity", "dashboard" ->
                 V3FeaturesPage(data, store, section)
             "ocr", "expiry", "prices", "fairness", "checklists", "trash", "search",
-            "appearance", "diagnostics" -> V4FeaturesPage(section, data, store, onJump)
+            "appearance", "diagnostics" -> V4FeaturesPage(section, data, store, onJump, onOpenFeature)
         }
         if (status.isNotBlank()) Text(status, color = Teal)
         Spacer(Modifier.height(90.dp))
@@ -150,6 +176,25 @@ fun ExtrasPage(
             },
             dismissButton = { TextButton(onClick = { imported = null }) { Text("Abbrechen") } }
         )
+    }
+}
+
+/**
+ * Reuses the existing screens when reached from a contextual category shortcut.
+ * No changes to stored data, Firestore paths or feature-specific state.
+ */
+@Composable
+fun HouseholdFeatureContent(section: String, data: HouseholdData,
+    store: HouseholdStore, onJump: (Int) -> Unit = {}) {
+    when (section) {
+        "meals" -> MealsSection(data, store)
+        "budget" -> BudgetSection(data, store)
+        "templates", "receipts", "recipes", "calendar" ->
+            V3FeaturesPage(data, store, section)
+        "ocr", "expiry", "prices", "fairness", "checklists" ->
+            V4FeaturesPage(section, data, store, onJump)
+        else -> Text("Diese Funktion ist nicht verfügbar.",
+            color = MaterialTheme.colorScheme.error)
     }
 }
 
